@@ -1,0 +1,546 @@
+/* Reset e base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Base Font */
+body {
+  font-family: 'Inter', sans-serif; /* Assicurati di importare un font come Inter o usare uno di sistema */
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+:root {
+  /* Colori BNC Energy (dal sito) */
+  --primary-color: #1a4d2e; /* Verde scuro principale */
+  --primary-dark: #143d24;
+  --primary-light: #4a7c59;
+  --secondary-color: #f4a261; /* Arancione/Corallo */
+  --accent-color: #e76f51; /* Colore di accento */
+  
+  /* Colori UI Odoo-style */
+  --bg-primary: #f9f9f9; /* Sfondo generale */
+  --bg-secondary: #ffffff; /* Sfondo card/componente */
+  --bg-dark: #2c3e50; /* Sfondo scuro alternativo */
+  
+  --text-primary: #2c3e50;
+  --text-secondary: #6c757d;
+  --text-light: #ffffff;
+  
+  --border-color: #dee2e6;
+  --border-radius: 4px;
+  
+  --success: #28a745;
+  --warning: #ffc107;
+  --danger: #dc3545;
+  --info: #17a2b8;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+}
+
+/* ---------------------------------- */
+/* ⭐️ LAYOUT E SCROLLBAR (La soluzione) ⭐️ */
+/* ---------------------------------- */
+
+/* 1. Assicura che l'app occupi l'altezza completa del viewport e nascondi lo scorrimento globale */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh; /* Usa l'altezza completa del viewport */
+  overflow: hidden; /* Impedisce lo scorrimento del contenitore principale */
+}
+
+/* 2. Sidebar */
+.sidebar {
+  width: 280px; /* Ho leggermente aumentato la larghezza */
+  flex-shrink: 0;
+  background: var(--primary-dark);
+  color: var(--text-light);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  overflow-y: auto; /* Permette lo scorrimento verticale della sidebar */
+}
+
+.sidebar-header {
+  padding-bottom: 24px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.sidebar-logo small {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.sidebar-nav {
+  flex-grow: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 4px 0;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: var(--border-radius);
+  transition: background-color 0.2s, color 0.2s;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.nav-item:hover {
+  color: var(--text-light);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-item.active {
+  color: var(--primary-color);
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  background-color: var(--secondary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 18px;
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+
+/* 3. Contenitore Principale (content-wrapper) */
+.content-wrapper {
+  flex: 1; /* Occupa tutto lo spazio orizzontale rimanente */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  
+  /* ⭐️ SOLUZIONE: Gestisce lo scorrimento verticale ⭐️ */
+  overflow-y: auto; 
+  
+  background-color: var(--bg-primary);
+  padding: 32px; 
+}
+
+/* ---------------------------------- */
+/* COMPONENTI UI BASE (CARD, FORM, BUTTONS) */
+/* ---------------------------------- */
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.top-bar h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.content-area {
+  flex-grow: 1; /* Permette al contenuto di riempire lo spazio nel content-wrapper */
+}
+
+/* Card */
+.card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+.card-header {
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: #f4f6f8;
+}
+
+.card-body {
+  padding: 20px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: var(--text-light);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-dark);
+}
+
+.btn-secondary {
+  background-color: var(--text-secondary);
+  color: var(--text-light);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.btn-outline-primary {
+  background-color: transparent;
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.btn-outline-primary:hover:not(:disabled) {
+  background-color: var(--primary-light);
+  color: var(--text-light);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-control, .form-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus, .form-select:focus {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  border-color: var(--primary-light);
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(26, 77, 46, 0.25); /* Primary color con opacità */
+}
+
+/* Form Row (per form orizzontali) */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+/* Table */
+.table-container {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table thead th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background-color: #f4f6f8;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.table tbody td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  font-size: 14px;
+}
+
+.table tbody tr:hover {
+  background-color: #fbfbfb;
+}
+
+/* Badges (Stati) */
+.badge {
+  display: inline-block;
+  padding: 0.35em 0.65em;
+  font-size: 75%;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: var(--border-radius);
+}
+
+.badge-success {
+  color: var(--text-light);
+  background-color: var(--success);
+}
+
+.badge-warning {
+  color: #212529;
+  background-color: var(--warning);
+}
+
+.badge-danger {
+  color: var(--text-light);
+  background-color: var(--danger);
+}
+
+/* Utilities */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.my-4 { margin-top: 1.5rem; margin-bottom: 1.5rem; }
+
+/* ---------------------------------- */
+/* MODAL */
+/* ---------------------------------- */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-md);
+  width: 90%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 16px 20px;
+  font-size: 18px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto; /* Permette lo scorrimento del contenuto del modale se necessario */
+  max-height: 70vh;
+}
+
+.modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+
+/* ---------------------------------- */
+/* PHOTO UPLOAD */
+/* ---------------------------------- */
+
+.photo-upload-container {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+  background-color: #fdfdfd;
+}
+
+.photo-upload-container.drag-active {
+  border-color: var(--primary-color);
+  background-color: #e6f7e9; /* Sfondo chiaro quando si trascina */
+}
+
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.photo-item {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  overflow: hidden;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.photo-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-item-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+.photo-item-remove:hover {
+  opacity: 1;
+  background: #c82333;
+}
+
+/* ---------------------------------- */
+/* Loading */
+/* ---------------------------------- */
+.spinner {
+  border: 3px solid var(--border-color);
+  border-top: 3px solid var(--primary-color);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 40px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ---------------------------------- */
+/* RESPONSIVE */
+/* ---------------------------------- */
+@media (max-width: 992px) {
+  /* Diminuisci padding e spazi per schermi più piccoli */
+  .content-wrapper {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Nascondi la sidebar e usa un layout mobile (opzionale, se hai un menu a hamburger) */
+  .sidebar {
+    width: 220px; /* Sidebar ancora presente ma più stretta */
+  }
+
+  .form-row {
+    grid-template-columns: 1fr; /* Form su singola colonna */
+  }
+  
+  .table-container {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Layout completamente mobile */
+  .app-container {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: auto;
+    padding: 16px;
+  }
+  
+  .sidebar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .nav-item {
+    flex-basis: auto;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .content-wrapper {
+    padding: 16px;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .top-bar h1 {
+    font-size: 24px;
+  }
+}
