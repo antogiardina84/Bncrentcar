@@ -164,7 +164,7 @@ router.post('/upload-multiple', authMiddleware, (req, res, next) => {
           try {
             const result = await pool.query(
               `INSERT INTO rental_photos 
-               (rental_id, photo_type, file_path, file_name, file_size, mime_type, uploaded_at)
+               (rental_id, photo_type, file_path, file_name, file_size, mime_type, upload_date)
                VALUES ($1, $2, $3, $4, $5, $6, NOW()) 
                RETURNING *`,
               [rental_id, photo_type, file.path, file.filename, file.size, file.mimetype]
@@ -263,7 +263,7 @@ router.get('/rental/:rentalId', authMiddleware, async (req, res) => {
       params.push(photo_type);
     }
 
-    const result = await query(queryText + ' ORDER BY uploaded_at DESC', params);
+    const result = await query(queryText + ' ORDER BY upload_date DESC', params);
     res.json({ success: true, data: result.rows });
   } catch (error) {
     console.error('Errore recupero foto:', error);

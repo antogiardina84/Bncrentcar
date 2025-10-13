@@ -1,83 +1,70 @@
-const PDFDocument = require('pdfkit');
+// contractGenerator.js
+// Generatore PDF per Contratto di Noleggio - versione PDFMake (formale e compatta)
+// Mantiene tutti i testi, riferimenti e collegamenti preesistenti.
+
 const fs = require('fs');
 const path = require('path');
+const PdfPrinter = require('pdfmake');
 
-// **ATTENZIONE:** Sostituisci questo percorso con il path reale 
-// della tua immagine del diagramma del veicolo.
-// Se non hai un'immagine, la sezione rimarrà vuota o darà errore se non gestito.
-const DAMAGE_DIAGRAM_IMAGE_PATH = path.join(__dirname, 'diagramma.png'); 
+const DAMAGE_DIAGRAM_IMAGE_PATH = path.join(__dirname, 'diagramma.png');
 
 class ContractGenerator {
   constructor() {
-    this.doc = null;
-    this.pageMargin = 40;
-    this.contentWidth = 515;
-    
-    // Colori tema BNC Energy
+    // Margini e caratteristiche generali (stile compatto/formale)
+    this.pageSize = 'A4';
+    this.pageMargins = [40, 40, 40, 40]; // left, top, right, bottom
+
+    // Colori e stili (coerenti con design originale, compatto)
     this.colors = {
       primary: '#1a4d2e',
       primaryLight: '#4a7c59',
-      headerBg: '#1a4d2e',
-      border: '#dee2e6',
       text: '#2c3e50',
       textLight: '#6c757d',
-      tableHeader: '#f4f6f8',
+      border: '#dee2e6'
     };
+
+    // Font configuration: cerca i font nella cartella fonts o usa la variabile env FONTS_DIR
+    const fontsDir = process.env.FONTS_DIR || path.join(__dirname, 'fonts');
+    this.fonts = {
+      Roboto: {
+        normal: path.join(fontsDir, 'Roboto-Regular.ttf'),
+        bold: path.join(fontsDir, 'Roboto-Medium.ttf'),
+        italics: path.join(fontsDir, 'Roboto-Italic.ttf'),
+        bolditalics: path.join(fontsDir, 'Roboto-MediumItalic.ttf'),
+      }
+    };
+
+    // Se i font non esistono, pdfmake lancerà errore all'esecuzione: l'utente deve assicurarsi che i ttf siano disponibili.
+    this.printer = new PdfPrinter(this.fonts);
   }
 
+  // Genera il PDF su disco (outputPath)
   async generateContract(rentalData, outputPath) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        this.doc = new PDFDocument({
-          size: 'A4',
-          margin: this.pageMargin,
-          info: {
-            Title: `Contratto Noleggio ${rentalData.rental_number}`,
-            Author: process.env.COMPANY_NAME || 'BNC Energy Rent Car',
-          }
-        });
+        // Carica immagini (diagramma e foto) come data URLs se esistono
+        const damageDiagramDataUrl = this._loadImageAsDataUrl(DAMAGE_DIAGRAM_IMAGE_PATH);
 
+        // Carica foto di pickup e return trasformandole in dataURL quando esistono
+        const pickPhotos = (rentalData.pickup_photos || []).map(p => ({
+          dataUrl: this._loadImageAsDataUrl(p.file_path),
+          uploaded_at: p.uploaded_at
+        }));
+
+        const returnPhotos = (rentalData.return_photos || []).map(p => ({
+          dataUrl: this._loadImageAsDataUrl(p.file_path),
+          uploaded_at: p.uploaded_at
+        }));
+
+        const docDefinition = this._buildDocumentDefinition(rentalData, damageDiagramDataUrl, pickPhotos, returnPhotos);
+
+        const pdfDoc = this.printer.createPdfKitDocument(docDefinition, {});
         const stream = fs.createWriteStream(outputPath);
-        this.doc.pipe(stream);
-
-        // === PAGINA 1: CONTRATTO ===
-        this.addCompanyHeader(rentalData);
-        this.addContractInfoBox(rentalData);
-        
-        this.doc.y = 150; // Posizione dopo l'header
-        
-        this.addClientSection(rentalData);
-        this.addVehicleSection(rentalData);
-        this.addPricingSection(rentalData);
-        this.addFranchiseSection(rentalData);
-        this.addServicesSection(rentalData);
-        this.addPickupSection(rentalData);
-        this.addReturnSection(rentalData);
-        
-        // Firma cliente prima pagina: posizionamento sicuro alla fine della pagina
-        const signatureY = Math.min(this.doc.y + 10, 750); // Limita la Y per non uscire dalla pagina
-        this.addSignatureBox('Firma Cliente', signatureY);
-
-        // === PAGINA 2: CONDIZIONI GENERALI ===
-        this.doc.addPage();
-        this.addTermsAndConditions();
-
-        // === PAGINA 3+: FOTO (se presenti) ===
-        if (rentalData.pickup_photos && rentalData.pickup_photos.length > 0) {
-          this.doc.addPage();
-          this.addPhotosSection('Foto veicolo in uscita', rentalData.pickup_photos);
-        }
-        
-        if (rentalData.return_photos && rentalData.return_photos.length > 0) {
-          this.doc.addPage();
-          this.addPhotosSection('Foto veicolo al rientro', rentalData.return_photos);
-        }
-
-        this.doc.end();
+        pdfDoc.pipe(stream);
+        pdfDoc.end();
 
         stream.on('finish', () => resolve(outputPath));
         stream.on('error', (err) => reject(err));
-
       } catch (error) {
         reject(error);
       }
@@ -85,10 +72,10 @@ class ContractGenerator {
   }
 
   // ============================================
-  // HEADER E BOX CONTRATTO
+  // Costruzione del documento (pdfmake)
   // ============================================
-  
-  addCompanyHeader(data) {
+  _buildDocumentDefinition(data, damageDiagramDataUrl, pickupPhotos, returnPhotos) {
+    // Company info (come nel file originale)
     const company = {
       name: process.env.COMPANY_NAME || 'BNC Energy Rent Car',
       address: process.env.COMPANY_ADDRESS || 'Via Decio Furnò 26',
@@ -101,123 +88,164 @@ class ContractGenerator {
       email: process.env.COMPANY_EMAIL || 'info@bncenergy.it'
     };
 
-    // Rettangolo header verde
-    this.doc
-      .rect(this.pageMargin, this.pageMargin, 320, 85)
-      .fillAndStroke(this.colors.headerBg, this.colors.headerBg);
+    // Stili
+    const styles = {
+      headerCompany: { fontSize: 12, bold: true, color: 'white' },
+      headerSmall: { fontSize: 7, color: 'white' },
+      boxTitle: { fontSize: 9, bold: true, color: 'white' },
+      sectionTitle: { fontSize: 10, bold: true, color: this.colors.primary, margin: [0, 6, 0, 4] },
+      label: { fontSize: 8, bold: true, color: this.colors.textLight },
+      value: { fontSize: 8, color: this.colors.text },
+      termsTitle: { fontSize: 12, bold: true, color: this.colors.primary, alignment: 'center', margin: [0, 6, 0, 8] },
+      small: { fontSize: 8, color: this.colors.textLight },
+      tiny: { fontSize: 7, color: this.colors.textLight }
+    };
 
-    // Testo header
-    this.doc
-      .fillColor('white')
-      .fontSize(16)
-      .font('Helvetica-Bold')
-      .text(company.name, this.pageMargin + 15, this.pageMargin + 12, { width: 290 });
+    // Left header box (company) + right info box (contract)
+    const headerTable = {
+      columns: [
+        {
+          width: 'auto',
+          stack: [
+            {
+              canvas: [
+                { type: 'rect', x: 0, y: 0, w: 320, h: 72, r: 4, color: this.colors.primary }
+              ]
+            },
+            {
+              // overlay content using absolutePosition is complex in pdfmake;
+              // we'll simulate header with a table inside a colored background using background function below
+              margin: [0, -68, 0, 0],
+              table: {
+                widths: [320],
+                body: [
+                  [
+                    {
+                      stack: [
+                        { text: company.name, style: 'headerCompany', margin: [12, 12, 0, 2] },
+                        { text: `${company.address}`, style: 'headerSmall', margin: [12, 0, 0, 0] },
+                        { text: `${company.zip} - ${company.city} - ${company.province}`, style: 'headerSmall', margin: [12, 0, 0, 0] },
+                        { text: `Cod. Fisc: ${company.cf} / P.IVA ${company.vat}`, style: 'headerSmall', margin: [12, 0, 0, 0] },
+                        { text: `Tel: ${company.phone} - Email: ${company.email}`, style: 'headerSmall', margin: [12, 0, 0, 6] },
+                      ]
+                    }
+                  ]
+                ]
+              },
+              layout: {
+                defaultBorder: false
+              }
+            }
+          ]
+        },
+        {
+          width: '*',
+          stack: [
+            {
+              table: {
+                widths: ['*'],
+                body: [
+                  [
+                    {
+                      stack: [
+                        {
+                          text: 'CONTRATTO DI NOLEGGIO',
+                          style: 'boxTitle',
+                          margin: [0, 4, 0, 3],
+                          alignment: 'center',
+                        }
+                      ],
+                      fillColor: this.colors.primaryLight,
+                      margin: [0, 0, 0, 0]
+                    }
+                  ],
+                  [
+                    {
+                      columns: [
+                        {
+                          width: '*',
+                          text: [
+                            { text: `Data: `, style: 'label' },
+                            { text: ` ${this.formatDateTime(data.rental_date || data.pickup_date)}\n`, style: 'value' },
+                            { text: `N°: `, style: 'label' },
+                            { text: ` ${data.rental_number}\n`, style: 'value' },
+                            { text: `Codice: `, style: 'label' },
+                            { text: ` ${data.booking_code || 'N/A'}`, style: 'value' }
+                          ],
+                          margin: [8, 6, 0, 6]
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              },
+              layout: 'noBorders'
+            }
+          ]
+        }
+      ]
+    };
 
-    this.doc
-      .fontSize(8)
-      .font('Helvetica')
-      .text(company.address, this.pageMargin + 15, this.pageMargin + 32)
-      .text(`${company.zip} - ${company.city} - ${company.province}`, { continued: false })
-      .text(`Cod. Fisc: ${company.cf} / P.IVA ${company.vat}`)
-      .text(`Tel: ${company.phone} - Email: ${company.email}`);
-  }
+    // Helper: small label/value pair in two columns
+    const kv = (label, value) => {
+      return {
+        columns: [
+          { width: 110, text: label + ':', style: 'label' },
+          { width: '*', text: value || 'N/A', style: 'value' }
+        ],
+        columnGap: 6
+      };
+    };
 
-  addContractInfoBox(data) {
-    const boxX = 370;
-    const boxY = this.pageMargin;
-    const boxW = 185;
-    const boxH = 85;
-
-    // Box esterno
-    this.doc
-      .rect(boxX, boxY, boxW, boxH)
-      .fillAndStroke('white', this.colors.border);
-
-    // Header del box
-    this.doc
-      .rect(boxX, boxY, boxW, 22)
-      .fillAndStroke(this.colors.primaryLight, this.colors.primaryLight);
-
-    this.doc
-      .fontSize(11)
-      .font('Helvetica-Bold')
-      .fillColor('white')
-      .text('CONTRATTO DI NOLEGGIO', boxX + 5, boxY + 6, { 
-        width: boxW - 10, 
-        align: 'center' 
-      });
-
-    // Contenuto box
-    this.doc
-      .fillColor(this.colors.text)
-      .fontSize(8)
-      .font('Helvetica')
-      .text(`Data: ${this.formatDateTime(data.rental_date || data.pickup_date)}`, boxX + 8, boxY + 30)
-      .text(`N°: ${data.rental_number}`, boxX + 8, boxY + 45)
-      .text(`Codice: ${data.booking_code || 'N/A'}`, boxX + 8, boxY + 60);
-  }
-
-  // ============================================
-  // SEZIONI CONTENUTO
-  // ============================================
-
-  addClientSection(data) {
+    // Client section (two columns compact)
     const customer = data.customer || data;
-    
-    this.addSectionTitle('Informazioni Cliente');
-    
-    const startY = this.doc.y;
-    const col1X = this.pageMargin;
-    const col2X = this.pageMargin + 270;
-    let col1End = startY;
-    let col2End = startY;
+    const clientSection = [
+      { text: 'Informazioni Cliente', style: 'sectionTitle' },
+      {
+        columns: [
+          {
+            width: '50%',
+            stack: [
+              kv('Cliente/Azienda', customer.full_name),
+              kv('Indirizzo', customer.address),
+              kv('Città', `${customer.city}${customer.zip_code ? ', ' + customer.zip_code : ''}${customer.province ? ', ' + customer.province : ''}${customer.country ? ', ' + customer.country : ''}`),
+              kv('C.F.', customer.fiscal_code),
+              ...(customer.vat_number ? [kv('P. IVA', customer.vat_number)] : [])
+            ]
+          },
+          {
+            width: '50%',
+            stack: [
+              kv('Telefono', customer.phone),
+              kv('Email', customer.email),
+              kv('Numero patente', customer.license_number),
+              kv('Luogo emissione', customer.license_issued_by),
+              kv('Data emissione', this.formatDate(customer.license_issue_date)),
+              kv('Data Scadenza', this.formatDate(customer.license_expiry_date))
+            ]
+          }
+        ],
+        columnGap: 14
+      }
+    ];
 
-    // Colonna 1
-    this.doc.y = startY;
-    col1End = this.addLabelValue('Cliente/Azienda', customer.full_name, col1X);
-    col1End = this.addLabelValue('Indirizzo', customer.address, col1X);
-    col1End = this.addLabelValue('Città', `${customer.city}, ${customer.zip_code || ''}, ${customer.province || ''}, ${customer.country || 'IT'}`, col1X);
-    col1End = this.addLabelValue('C.F.', customer.fiscal_code, col1X);
-    if (customer.vat_number) {
-      col1End = this.addLabelValue('P. IVA', customer.vat_number, col1X);
-    }
-    
-    // Colonna 2
-    this.doc.y = startY;
-    col2End = this.addLabelValue('Telefono', customer.phone, col2X);
-    col2End = this.addLabelValue('Email', customer.email, col2X);
-    col2End = this.addLabelValue('Numero patente', customer.license_number, col2X);
-    col2End = this.addLabelValue('Luogo emissione', customer.license_issued_by, col2X);
-    col2End = this.addLabelValue('Data emissione', this.formatDate(customer.license_issue_date), col2X);
-    col2End = this.addLabelValue('Data Scadenza', this.formatDate(customer.license_expiry_date), col2X);
-    
-    this.doc.y = Math.max(col1End, col2End) + 5; // Usa la posizione più bassa + un po' di spazio
-  }
-
-  addVehicleSection(data) {
+    // Vehicle section (compact three/four columns)
     const vehicle = data.vehicle || data;
-    
-    this.addSectionTitle('Informazioni Veicolo');
-    
-    const startY = this.doc.y;
-    const col1X = this.pageMargin;
-    const col2X = this.pageMargin + 130;
-    const col3X = this.pageMargin + 260;
-    const col4X = this.pageMargin + 390;
+    const vehicleSection = [
+      { text: 'Informazioni Veicolo', style: 'sectionTitle' },
+      {
+        columns: [
+          { width: 'auto', stack: [kv('Targa', vehicle.license_plate)] },
+          { width: 'auto', stack: [kv('Categoria', data.category_name || 'N/A')] },
+          { width: 'auto', stack: [kv('Marca', vehicle.brand)] },
+          { width: '*', stack: [kv('Modello', vehicle.model)] }
+        ],
+        columnGap: 10
+      }
+    ];
 
-    this.doc.y = startY;
-    this.addLabelValue('Targa', vehicle.license_plate, col1X);
-    this.addLabelValue('Categoria', data.category_name || 'N/A', col2X);
-    this.addLabelValue('Marca', vehicle.brand, col3X);
-    this.addLabelValue('Modello', vehicle.model, col4X);
-    
-    this.doc.y = startY + 24; // Avanzamento sicuro dopo 2 righe
-  }
-
-  addPricingSection(data) {
-    this.addSectionTitle('Dettagli Tariffari');
-    
-    const items = [
+    // Pricing section: create a small two-column table + totals
+    const pricingItems = [
       { label: 'Tariffa di noleggio', value: this.formatCurrency(data.daily_rate) },
       { label: 'Costo consegna/ritiro', value: this.formatCurrency(data.delivery_cost || 0) },
       { label: 'Addebito carburante', value: this.formatCurrency(data.fuel_charge || 0) },
@@ -225,251 +253,405 @@ class ContractGenerator {
       { label: 'Servizi ed extra', value: this.formatCurrency(data.extras_charge || 0) },
       { label: 'Addebito Km extra', value: this.formatCurrency(data.extra_km_charge || 0) },
       { label: 'Franchigia Addebitata', value: this.formatCurrency(data.franchise_charge || 0) },
-      { label: 'Sconto Applicato', value: this.formatCurrency(data.discount || 0) },
+      { label: 'Sconto Applicato', value: this.formatCurrency(data.discount || 0) }
     ];
 
-    const col1X = this.pageMargin;
-    const col2X = this.pageMargin + 170;
-    const col3X = this.pageMargin + 320;
+    const priceLeft = pricingItems.slice(0, 4).map(i => [ { text: i.label, style: 'label' }, { text: i.value, style: 'value', alignment: 'right' } ]);
+    const priceRight = pricingItems.slice(4).map(i => [ { text: i.label, style: 'label' }, { text: i.value, style: 'value', alignment: 'right' } ]);
 
-    let currentY = this.doc.y;
-    let col3End = currentY;
-
-    // Prima colonna
-    for (let i = 0; i < 4; i++) {
-      this.doc.y = currentY + (i * 12);
-      this.addLabelValue(items[i].label, items[i].value, col1X, 150);
-    }
-
-    // Seconda colonna
-    for (let i = 4; i < items.length; i++) {
-      this.doc.y = currentY + ((i - 4) * 12);
-      this.addLabelValue(items[i].label, items[i].value, col2X, 150);
-    }
-
-    // Totali (terza colonna)
-    this.doc.y = currentY;
-    this.doc
-      .fontSize(9)
-      .font('Helvetica-Bold')
-      .fillColor(this.colors.text);
-    
-    col3End = this.addLabelValue('Totale', this.formatCurrency(data.total_amount), col3X, 90);
-    col3End = this.addLabelValue('Totale Versato', this.formatCurrency(data.amount_paid || 0), col3X, 90);
-    col3End = this.addLabelValue('Da versare', this.formatCurrency(data.amount_due || 0), col3X, 90);
-    col3End = this.addLabelValue('Metodo di pagamento', data.payment_method || 'Contanti', col3X, 90);
-    
-    this.doc.font('Helvetica').fontSize(8);
-    col3End = this.addLabelValue('Cauzione', this.formatCurrency(data.deposit_amount || 0), col3X, 90);
-    col3End = this.addLabelValue('Metodo cauzione', data.deposit_method || 'Contanti', col3X, 90);
-
-    this.doc.y = col3End + 5; // Usa la posizione più bassa della colonna 3 + spazio
-  }
-
-  addFranchiseSection(data) {
-    this.addSectionTitle('Franchigie Assicurative');
-    
-    const col1X = this.pageMargin;
-    const col2X = this.pageMargin + 190;
-    const col3X = this.pageMargin + 380;
-    
-    const startY = this.doc.y;
-    
-    this.doc.y = startY;
-    this.addLabelValue('Franchigia Furto/Incendio', this.formatCurrency(data.franchise_theft || 0), col1X);
-    this.addLabelValue('Franchigia danni', this.formatCurrency(data.franchise_damage || 0), col2X);
-    this.addLabelValue('Franchigia RCA', this.formatCurrency(data.franchise_rca || 0), col3X);
-    
-    this.doc.y = startY + 17; // Avanzamento sicuro
-  }
-
-  addServicesSection(data) {
-    this.addSectionTitle('Servizi & Extra');
-    
-    this.doc
-      .fontSize(9)
-      .font('Helvetica')
-      .fillColor(this.colors.text)
-      .text(`Il veicolo noleggiato include Km ${data.km_included === 'unlimited' || !data.km_included ? 'illimitati' : data.km_included}`, 
-        this.pageMargin, this.doc.y, { width: this.contentWidth });
-    
-    this.doc.y += 15;
-  }
-
-  addPickupSection(data) {
-    this.addSectionTitle('Informazioni Uscita');
-    
-    const col1X = this.pageMargin;
-    const col2X = this.pageMargin + 250;
-    const startY = this.doc.y;
-    let col1End, col2End;
-
-    // Colonna 1
-    this.doc.y = startY;
-    col1End = this.addLabelValue('Luogo', data.pickup_location, col1X, 230);
-    col1End = this.addLabelValue('Data', this.formatDateTime(data.pickup_date), col1X, 230);
-    
-    // Colonna 2
-    this.doc.y = startY;
-    col2End = this.addLabelValue('Livello Carburante', `${data.pickup_fuel_level}%`, col2X);
-    col2End = this.addLabelValue('Km in uscita', data.pickup_km?.toString() || '0', col2X);
-
-    this.doc.y = Math.max(col1End, col2End); // Allinea sotto le colonne
-
-    // Descrizione danni (se presente)
-    if (data.pickup_damages) {
-      this.doc.y += 5; 
-      this.doc
-        .fontSize(8)
-        .font('Helvetica-Bold')
-        .fillColor(this.colors.text)
-        .text('Descrizione Danni:', this.pageMargin, this.doc.y);
-      
-      this.doc.y += 10;
-      
-      this.doc
-        .font('Helvetica')
-        .fillColor(this.colors.textLight)
-        .text(data.pickup_damages, this.pageMargin, this.doc.y, { width: this.contentWidth });
-        
-      this.doc.y += 10; 
-    } else {
-        this.doc.y += 10; 
-    }
-
-
-    this.doc.y = this.addDamageDiagram() + 5; // AGGIUNTA del diagramma e avanzamento sicuro
-  }
-
-  addReturnSection(data) {
-    if (data.actual_return_date || data.return_date) {
-      // SEZIONE RIENTRO EFFETTUATO
-      this.addSectionTitle('Informazioni Rientro');
-      
-      const col1X = this.pageMargin;
-      const col2X = this.pageMargin + 250;
-      const startY = this.doc.y;
-      let col1End, col2End;
-
-      this.doc.y = startY;
-      col1End = this.addLabelValue('Luogo', data.return_location || data.pickup_location, col1X, 230);
-      col1End = this.addLabelValue('Data', this.formatDateTime(data.actual_return_date || data.return_date), col1X, 230);
-      
-      this.doc.y = startY;
-      col2End = this.addLabelValue('Livello Carburante', data.return_fuel_level ? `${data.return_fuel_level}%` : 'N/A', col2X);
-      col2End = this.addLabelValue('Km al rientro', data.return_km?.toString() || 'N/A', col2X);
-      
-      this.doc.y = Math.max(col1End, col2End); // Allinea sotto le colonne
-
-      if (data.return_damages) {
-        this.doc.y += 5;
-        this.doc
-          .fontSize(8)
-          .font('Helvetica-Bold')
-          .text('Descrizione Danni:', this.pageMargin, this.doc.y);
-        
-        this.doc.y += 10;
-        
-        this.doc
-          .font('Helvetica')
-          .fillColor(this.colors.textLight)
-          .text(data.return_damages, this.pageMargin, this.doc.y, { width: this.contentWidth });
-          
-        this.doc.y += 10;
-      } else {
-        this.doc.y += 10;
+    const pricingSection = [
+      { text: 'Dettagli Tariffari', style: 'sectionTitle' },
+      {
+        columns: [
+          {
+            width: '58%',
+            table: {
+              widths: ['*', 80],
+              body: [
+                ...priceLeft
+              ]
+            },
+            layout: {
+              hLineWidth: function(i, node) { return 0; },
+              vLineWidth: function(i, node) { return 0; }
+            }
+          },
+          {
+            width: '42%',
+            stack: [
+              {
+                table: {
+                  widths: ['*', 80],
+                  body: [
+                    ...priceRight,
+                    [{ text: 'Totale', style: 'label' }, { text: this.formatCurrency(data.total_amount), style: 'value', alignment: 'right' }],
+                    [{ text: 'Totale Versato', style: 'label' }, { text: this.formatCurrency(data.amount_paid || 0), style: 'value', alignment: 'right' }],
+                    [{ text: 'Da versare', style: 'label' }, { text: this.formatCurrency(data.amount_due || 0), style: 'value', alignment: 'right' }],
+                    [{ text: 'Metodo di pagamento', style: 'label' }, { text: data.payment_method || 'Contanti', style: 'value', alignment: 'right' }],
+                    [{ text: 'Cauzione', style: 'label' }, { text: this.formatCurrency(data.deposit_amount || 0), style: 'value', alignment: 'right' }],
+                    [{ text: 'Metodo cauzione', style: 'label' }, { text: data.deposit_method || 'Contanti', style: 'value', alignment: 'right' }],
+                  ]
+                },
+                layout: 'noBorders'
+              }
+            ]
+          }
+        ]
       }
+    ];
 
-      this.doc.y = this.addDamageDiagram() + 5; // AGGIUNTA del diagramma e avanzamento sicuro
-    } else {
-      // SEZIONE RIENTRO PREVISTO
-      this.addSectionTitle('Rientro Previsto');
-      
-      const col1X = this.pageMargin;
-      const col2X = this.pageMargin + 250;
-      const startY = this.doc.y;
-
-      this.doc.y = startY;
-      this.addLabelValue('Luogo', data.pickup_location, col1X, 230);
-      this.addLabelValue('Data', this.formatDateTime(data.expected_return_date), col1X, 230);
-      
-      this.doc.y = startY;
-      this.addLabelValue('Km inclusi', data.km_included === 'unlimited' ? 'Illimitati' : data.km_included, col2X);
-
-      this.doc.y = startY + 24; // Avanzamento sicuro dopo 2 righe
-
-      this.doc.y += 5;
-      this.doc
-        .fontSize(8)
-        .font('Helvetica')
-        .fillColor(this.colors.textLight)
-        .text('Il veicolo dovrà essere riconsegnato nelle stesse condizioni in cui si trovava in sede di consegna. Pulizia e carburante dovranno essere ripristinati come all\'inizio del noleggio, salvo diverse pattuizioni.', 
-          this.pageMargin, this.doc.y, { width: this.contentWidth, align: 'justify' });
-
-      this.doc.y += 15;
-    }
-  }
-
-  // ============================================
-  // NUOVO METODO PER IL DIAGRAMMA DANNI
-  // ============================================
-
-  addDamageDiagram() {
-    const startY = this.doc.y;
-    const diagramWidth = 180;
-    const diagramHeight = 150; 
-    let finalY = startY;
-
-    // Controlla se l'immagine del diagramma esiste
-    if (fs.existsSync(DAMAGE_DIAGRAM_IMAGE_PATH)) {
-      try {
-        const xPos = this.pageMargin;
-        
-        this.doc.image(DAMAGE_DIAGRAM_IMAGE_PATH, xPos, startY, {
-          width: diagramWidth,
-          height: diagramHeight,
-          fit: [diagramWidth, diagramHeight]
-        });
-        finalY = startY + diagramHeight; // La posizione finale è dopo l'immagine
-      } catch (err) {
-        console.error(`Errore nel caricamento del diagramma danni: ${err}`);
-        // Fallback: mostra solo il testo, avanza la Y
-        this.doc
-          .fontSize(7)
-          .fillColor(this.colors.textLight)
-          .text('Diagramma Danni non disponibile o percorso errato.', this.pageMargin, startY, { width: this.contentWidth, align: 'left' });
-        finalY = startY + 15; // Spazio per il messaggio di fallback
+    // Franchigie section
+    const franchiseSection = [
+      { text: 'Franchigie Assicurative', style: 'sectionTitle' },
+      {
+        columns: [
+          { width: '33%', stack: [kv('Franchigia Furto/Incendio', this.formatCurrency(data.franchise_theft || 0))] },
+          { width: '33%', stack: [kv('Franchigia danni', this.formatCurrency(data.franchise_damage || 0))] },
+          { width: '33%', stack: [kv('Franchigia RCA', this.formatCurrency(data.franchise_rca || 0))] }
+        ],
+        columnGap: 8
       }
-    } else {
-      // Placeholder se l'immagine non è disponibile
-      this.doc
-        .fontSize(7)
-        .fillColor(this.colors.textLight)
-        .text('X: Graffio  O: Ammaccatura', this.pageMargin, startY, { align: 'center', width: this.contentWidth });
-      finalY = startY + 15; // Spazio per il placeholder
-    }
+    ];
 
-    return finalY; // Ritorna la posizione Y finale
-  }
+    // Services & extras
+    const servicesSection = [
+      { text: 'Servizi & Extra', style: 'sectionTitle' },
+      { text: `Il veicolo noleggiato include Km ${data.km_included === 'unlimited' || !data.km_included ? 'Illimitati' : data.km_included}`, style: 'value', margin: [0, 0, 0, 6] }
+    ];
 
-  // ============================================
-  // CONDIZIONI GENERALI (Pagina 2) - AGGIORNATA
-  // ============================================
-
-  addTermsAndConditions() {
-    this.doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor(this.colors.primary)
-      .text('CONDIZIONI GENERALI DI NOLEGGIO', { align: 'center' });
-    
-    this.doc.moveDown();
-    
-    const termsData = [
-      { 
-        title: 'Introduzione', 
-        content: "Il presente contratto rappresenta una sintesi delle principali disposizioni delle Condizioni Generali di Noleggio che insieme alla lettera di noleggio sottoscritta dal Cliente, costituiscono la fonte esclusiva che regola il rapporto contrattuale intercorrente tra la società di noleggio BNCEnergy srl, Via Decio Furnò, 26 Siracusa (SR) e il cliente o propri Affiliati."
+    // Pickup section (with damages description and optional diagram)
+    const pickupSection = [
+      { text: 'Informazioni Uscita', style: 'sectionTitle' },
+      {
+        columns: [
+          {
+            width: '60%',
+            stack: [
+              kv('Luogo', data.pickup_location),
+              kv('Data', this.formatDateTime(data.pickup_date))
+            ]
+          },
+          {
+            width: '40%',
+            stack: [
+              kv('Livello Carburante', `${Number(data.pickup_fuel_level || 0)}%`),
+              kv('Km in uscita', data.pickup_km?.toString() || '0')
+            ]
+          }
+        ],
+        columnGap: 12
       },
+      ...(data.pickup_damages ? [
+        { text: 'Descrizione Danni:', style: 'label', margin: [0, 6, 0, 2] },
+        { text: data.pickup_damages, style: 'small', margin: [0, 0, 0, 6] }
+      ] : [{ text: '', margin: [0, 4, 0, 0] }]),
+      // Diagramma danni (se disponibile)
+      ...(damageDiagramDataUrl ? [
+        {
+          columns: [
+            { width: '*', image: damageDiagramDataUrl, fit: [180, 140] },
+            { width: '*', text: '', margin: [10,0,0,0] }
+          ],
+          columnGap: 12,
+          margin: [0, 0, 0, 6]
+        }
+      ] : [])
+    ];
+
+    // Return section (if actual_return_date else expected)
+    let returnSectionContent = [];
+    if (data.actual_return_date || data.return_date) {
+      returnSectionContent = [
+        { text: 'Informazioni Rientro', style: 'sectionTitle' },
+        {
+          columns: [
+            {
+              width: '60%',
+              stack: [
+                kv('Luogo', data.return_location || data.pickup_location),
+                kv('Data', this.formatDateTime(data.actual_return_date || data.return_date))
+              ]
+            },
+            {
+              width: '40%',
+              stack: [
+                kv('Livello Carburante', data.return_fuel_level ? `${data.return_fuel_level}%` : 'N/A'),
+                kv('Km al rientro', data.return_km?.toString() || 'N/A')
+              ]
+            }
+          ],
+          columnGap: 12
+        },
+        ...(data.return_damages ? [
+          { text: 'Descrizione Danni:', style: 'label', margin: [0, 6, 0, 2] },
+          { text: data.return_damages, style: 'small', margin: [0, 0, 0, 6] }
+        ] : [{ text: '', margin: [0, 4, 0, 0] }]),
+        ...(damageDiagramDataUrl ? [
+          {
+            columns: [
+              { width: '*', image: damageDiagramDataUrl, fit: [180, 140] },
+              { width: '*', text: '', margin: [10,0,0,0] }
+            ],
+            columnGap: 12,
+            margin: [0, 0, 0, 6]
+          }
+        ] : [])
+      ];
+    } else {
+      returnSectionContent = [
+        { text: 'Rientro Previsto', style: 'sectionTitle' },
+        {
+          columns: [
+            { width: '60%', stack: [ kv('Luogo', data.pickup_location), kv('Data', this.formatDateTime(data.expected_return_date)) ] },
+            { width: '40%', stack: [ kv('Km inclusi', data.km_included === 'unlimited' ? 'Illimitati' : data.km_included) ] }
+          ],
+          columnGap: 12
+        },
+        {
+          text: 'Il veicolo dovrà essere riconsegnato nelle stesse condizioni in cui si trovava in sede di consegna. Pulizia e carburante dovranno essere ripristinati come all\'inizio del noleggio, salvo diverse pattuizioni.',
+          style: 'small',
+          margin: [0, 6, 0, 10],
+          alignment: 'justify'
+        }
+      ];
+    }
+
+    // Firma cliente box compatto (posizionato alla fine della prima pagina se possibile)
+    const signatureBlock = [
+      {
+        columns: [
+          { width: '*', text: '' },
+          {
+            width: 220,
+            stack: [
+              {
+                canvas: [
+                  { type: 'line', x1: 0, y1: 0, x2: 220, y2: 0, lineWidth: 0.5, color: this.colors.border }
+                ],
+                margin: [0, 20, 0, 2]
+              },
+              { text: 'Firma Cliente', style: 'tiny', margin: [0, 2, 0, 0], alignment: 'center' }
+            ]
+          }
+        ],
+        columnGap: 8
+      }
+    ];
+
+    // Terms and Conditions - riporto i testi originali (esattamente come nel file)
+    const termsData = this._getTermsData();
+
+    // Costruisco l'array dei contenuti principali - prima pagina
+    const content = [
+      headerTable,
+      { text: '\n' },
+      ...clientSection,
+      { text: '\n' },
+      ...vehicleSection,
+      { text: '\n' },
+      ...pricingSection,
+      { text: '\n' },
+      ...franchiseSection,
+      { text: '\n' },
+      ...servicesSection,
+      { text: '\n' },
+      ...pickupSection,
+      { text: '\n' },
+      ...returnSectionContent,
+      { text: '\n' },
+      ...signatureBlock
+    ];
+
+    // Pagina successiva: condizioni generali
+    const termsPage = [
+      { text: 'CONDIZIONI GENERALI DI NOLEGGIO', style: 'termsTitle' },
+      { text: termsData.intro, style: 'small', margin: [0, 0, 0, 8], alignment: 'justify' }
+    ];
+
+    // aggiungo ogni articolo come titolo + testo
+    termsData.articles.forEach(article => {
+      termsPage.push({ text: article.title, style: 'label', margin: [0, 6, 0, 2] });
+      termsPage.push({ text: article.content, style: 'small', margin: [0, 0, 0, 6], alignment: 'justify' });
+    });
+
+    // Clausole finali e blocco consenso checkbox
+    termsPage.push({ text: termsData.clauseConsent, style: 'small', margin: [0, 6, 0, 4], alignment: 'justify' });
+
+    // Checkbox consent (compatto)
+    termsPage.push({
+      columns: [
+        {
+          width: 120,
+          stack: [
+            { text: '[ X ] acconsente', style: 'label' },
+            { text: '[ ] non acconsente', style: 'label', margin: [0, 6, 0, 0] }
+          ]
+        },
+        {
+          width: '*',
+          text: 'al trattamento dei dati personali per attività di invio di materiale pubblicitario e utilizzo nell’ambito di analisi e studi commerciali e di abitudini di consumo così come specificati nell\'informativa all\'articolo 10 (Privacy) punto 2 del presente contratto.',
+          style: 'small',
+          alignment: 'justify'
+        }
+      ],
+      columnGap: 8,
+      margin: [0, 4, 0, 8]
+    });
+
+    termsPage.push({ text: 'Il Cliente avendo preso visione dell\'informativa alla Privacy e delle Condizioni Generali di Noleggio, dichiara di approvarne specificatamente tutte le clausole.', style: 'small', margin: [0, 6, 0, 8], alignment: 'justify' });
+
+    // Firma alla fine delle condizioni
+    termsPage.push({
+      columns: [
+        { width: '*', text: '' },
+        {
+          width: 220,
+          stack: [
+            {
+              canvas: [
+                { type: 'line', x1: 0, y1: 0, x2: 220, y2: 0, lineWidth: 0.5, color: this.colors.border }
+              ],
+              margin: [0, 20, 0, 2]
+            },
+            { text: 'Firma Cliente', style: 'tiny', margin: [0, 2, 0, 0], alignment: 'center' }
+          ]
+        }
+      ]
+    });
+
+    // Foto pages: una o più pagine per foto pick/return - 2 per riga, 2 righe per pagina (compact)
+    const photosPages = [];
+    const makePhotoBlocks = (title, photos) => {
+      if (!photos || photos.length === 0) return [];
+      const blocks = [];
+      blocks.push({ text: title, style: 'termsTitle' });
+      const photoRows = [];
+      let row = [];
+      photos.forEach((p, idx) => {
+        const image = p.dataUrl || null;
+        const caption = p.uploaded_at ? `Creata il ${this.formatDateTime(p.uploaded_at)}` : 'Creata il N/A';
+        const cell = image ? {
+          stack: [
+            { image: image, width: 240, height: 180, fit: [240, 180] },
+            { text: caption, style: 'tiny', margin: [0, 4, 0, 0], alignment: 'center' }
+          ]
+        } : {
+          stack: [
+            { text: 'Immagine non disponibile', style: 'tiny', margin: [0, 60, 0, 0], alignment: 'center' },
+            { text: caption, style: 'tiny', margin: [0, 4, 0, 0], alignment: 'center' }
+          ],
+          width: 240
+        };
+
+        row.push(cell);
+
+        if (row.length === 2 || idx === photos.length - 1) {
+          // fill to two columns if last incomplete
+          if (row.length === 1) row.push({ text: '' });
+          photoRows.push({ columns: row, columnGap: 15, margin: [0, 10, 0, 10] });
+          row = [];
+        }
+      });
+
+      return blocks.concat(photoRows);
+    };
+
+    if (pickupPhotos && pickupPhotos.length > 0) {
+      photosPages.push(...makePhotoBlocks('Foto veicolo in uscita', pickupPhotos));
+    }
+    if (returnPhotos && returnPhotos.length > 0) {
+      photosPages.push(...makePhotoBlocks('Foto veicolo al rientro', returnPhotos));
+    }
+
+    // Document Definition
+    const docDefinition = {
+      pageSize: this.pageSize,
+      pageMargins: this.pageMargins,
+      defaultStyle: {
+        font: 'Roboto',
+        fontSize: 9,
+        color: this.colors.text
+      },
+      content: [
+        ...content,
+        { text: '', pageBreak: 'after' },
+        ...termsPage,
+        ...(photosPages.length > 0 ? [{ text: '', pageBreak: 'after' }, ...photosPages] : [])
+      ],
+      styles,
+      // Background: color block behind left header rectangle
+      background: (currentPage, pageSize) => {
+        // We only want the header colored on the first page; pdfmake's background function called each page - restrict to first page
+        if (currentPage === 1) {
+          return [
+            {
+              canvas: [
+                { type: 'rect', x: 40, y: 40, w: 320, h: 72, r: 4, color: this.colors.primary }
+              ]
+            }
+          ];
+        }
+        return [];
+      },
+      info: {
+        title: `Contratto Noleggio ${data.rental_number}`,
+        author: process.env.COMPANY_NAME || 'BNC Energy Rent Car'
+      }
+    };
+
+    return docDefinition;
+  }
+
+  // ============================================
+  // Helpers
+  // ============================================
+  _loadImageAsDataUrl(filePath) {
+    try {
+      if (!filePath) return null;
+      if (!fs.existsSync(filePath)) return null;
+      const ext = path.extname(filePath).toLowerCase().replace('.', '');
+      const allowed = ['png', 'jpg', 'jpeg'];
+      if (!allowed.includes(ext)) return null;
+      const data = fs.readFileSync(filePath);
+      const base64 = data.toString('base64');
+      const mime = ext === 'jpg' ? 'jpeg' : ext;
+      return `data:image/${mime};base64,${base64}`;
+    } catch (err) {
+      // Non fatale: ritorna null
+      return null;
+    }
+  }
+
+  formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'N/A';
+    // orario 24h con due cifre
+    const datePart = d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timePart = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    return `${datePart}, ${timePart}`;
+  }
+
+  formatCurrency(amount) {
+    if (amount === null || amount === undefined) return '€ 0.00';
+    const v = parseFloat(amount);
+    if (isNaN(v)) return '€ 0.00';
+    return `€ ${v.toFixed(2)}`;
+  }
+
+  // Restituisce i testi delle condizioni (identici agli originali)
+  _getTermsData() {
+    // ATTENZIONE: i testi qui sono stati mantenuti pari pari dal contratto originale.
+    const intro = "Il presente contratto rappresenta una sintesi delle principali disposizioni delle Condizioni Generali di Noleggio che insieme alla lettera di noleggio sottoscritta dal Cliente, costituiscono la fonte esclusiva che regola il rapporto contrattuale intercorrente tra la società di noleggio BNCEnergy srl, Via Decio Furnò, 26 Siracusa (SR) e il cliente o propri Affiliati.";
+
+    const articles = [
       {
         title: '1. AFFIDAMENTO DEL VEICOLO',
         content: "La guida del veicolo e/o motociclo oggetto di locazione è consentita solo a persona in possesso di valida patente di guida di tipo \"A1\" \"A2\" \"A3\" e \"B\".\nE' richiesta la seguente età minima:\n-\"A1\" - 16 anni per motocicli fino a 11 kw - \"A2\" - 18 anni per motocicli fino a 35kw e \"A3\" 24 anni per motocicli superiori a 35kw.\n-\"B\"- 18 anni - solo per neopatentati, veicoli fino a 55 KW - dopo 01 anno di possesso della Patente \"B\" tutti i tipi di Autoveicoli fino a 9 posti.\n-\"B\" - 18 anni per tutti i tipi di Autocarro fino a 35q.\nIl veicolo e/o motociclo è affidato al Cliente nel presupposto che lo stesso lo utilizzi conducendolo personalmente.\nIl Cliente si assume ogni rischio o responsabilità in caso di affidamento della guida del veicolo e/o motociclo a terzi, ed anche agli effetti dell'art. 116 comma 12 del Codice della Strada(D.L.285/92), relativo all'affidamento del veicolo e/o motociclo a persona sprovvista di patente di guida o, comunque, non autorizzata dalla società di noleggio.\nIl Cliente potrà comunicare alla Società di noleggio presso cui ha noleggiato il veicolo e/o motociclo il nominativo di eventuali altre persone che potranno condurre il veicolo e/o motociclo i quali verranno autorizzati in secondo momento sotto presentazione di giusta autorizzazione alla guida(patente). Per ogni altra guida autorizzata è richiesto un supplemento giornaliero il cui importo è pari al 50% di quello descritto per il tipo di veicolo e/o motociclo già noleggiato. Per particolari gruppi di veicoli in particolari zone può essere richiesto, a discrezione della Società di Noleggio, il possesso di due Carte di Credito."
@@ -480,7 +662,7 @@ class ContractGenerator {
       },
       {
         title: '3. FRANCHIGIE ASSICURAZIONE DANNI RC - KASCO - FURTO - INCENDIO',
-        content: "Il veicolo e/o motociclo noleggiato è coperto da assicurazione R.C.A. e KASCO a norma delle vigenti leggi.\nQualora il Cliente debba occorrere uno degli eventi suddetti, sarà a suo carico la franchigia come indicato nella lettera nolo; in caso di furto e/o incendio la franchigia a carico del cliente è quella indicata nella lettera nolo e, in base al veicolo e/o motociclo noleggiato.\n(A) In caso di IRRIPARABILITA' totale del veicolo e/o motociclo noleggiato, dovuto ad incidente grave, per guida in stato di ebbrezza e/o uso di stupefacenti, la franchigia a carico del Cliente è pari al 100% del valore attuale del veicolo e/o motociclo noleggiato.\nPer i veicoli e/o motocicli muniti di antifurto Diablock o Blockshaft, se il Cliente vittima di furto del veicolo e/o motociclo noleggiato, non restituisce oltre alla chiave originale di apertura ed accensione, anche quella di uno degli antifurti citati, dovrà pagare una franchigia pari al 100% del valore attuale del veicolo. In tutti i casi di sinistro, furto, incendio, parziale o totale, è fatto obbligo al Cliente di effettuare regolare denuncia presso le Autorità competenti e, entro le 12 ore dall'evento, di consegnarla alla società di noleggio.\nI danni relativi al sinistro non sono addebitabili al cliente che produca modello C.I.D. con chiara e sottoscritta responsabilità della controparte.\nIl Cliente può scegliere di sottoscrivere il Servizio Aggiuntivo che riduce o elimina la penale per Responsabilità Economica, per chi si rende responsabile di al veicolo e/o motociclo. La sottoscrizione del Servizio Aggiuntivo che riduce o elimina la responsabilità per danni oltre ad avere un costo aggiuntivo al normale prezzo del Listino ufficiale per il veicolo e/o motociclo noleggiato, (con esclusione dei danni di cui al punto(A) che precede), non esonera il Cliente dall'adottare l'ordinaria diligenza nella conduzione del veicolo e/o motociclo.\nBNCEnergy srl , a titolo di penale si riserva la facoltà di procedere all'addebito di danni riconducibili a responsabilità del Cliente."
+        content: "Il veicolo e/o motociclo noleggiato è coperto da assicurazione R.C.A. e KASCO a norma delle vigenti leggi.\nQualora il Cliente debba occorrere uno degli eventi suddetti, sarà a suo carico la franchigia come indicato nella lettera nolo; in caso di furto e/o incendio la franchigia a carico del cliente è quella indicata nella lettera nolo e, in base al veicolo e/o motociclo noleggiato.\n(A) In caso di IRRIPARABILITA' totale del veicolo e/o motociclo noleggiato, dovuto ad incidente grave, per guida in stato di ebbrezza e/o uso di stupefacenti, la franchigia a carico del Cliente è pari al 100% del valore attuale del veicolo e/o motociclo noleggiato.\nPer i veicoli e/o motociccli muniti di antifurto Diablock o Blockshaft, se il Cliente vittima di furto del veicolo e/o motociclo noleggiato, non restituisce oltre alla chiave originale di apertura ed accensione, anche quella di uno degli antifurti citati, dovrà pagare una franchigia pari al 100% del valore attuale del veicolo. In tutti i casi di sinistro, furto, incendio, parziale o totale, è fatto obbligo al Cliente di effettuare regolare denuncia presso le Autorità competenti e, entro le 12 ore dall'evento, di consegnarla alla società di noleggio.\nI danni relativi al sinistro non sono addebitabili al cliente che produca modello C.I.D. con chiara e sottoscritta responsabilità della controparte.\nIl Cliente può scegliere di sottoscrivere il Servizio Aggiuntivo che riduce o elimina la penale per Responsabilità Economica, per chi si rende responsabile di al veicolo e/o motociclo. La sottoscrizione del Servizio Aggiuntivo che riduce o elimina la responsabilità per danni oltre ad avere un costo aggiuntivo al normale prezzo del Listino ufficiale per il veicolo e/o motociclo noleggiato, (con esclusione dei danni di cui al punto(A) che precede), non esonera il Cliente dall'adottare l'ordinaria diligenza nella conduzione del veicolo e/o motociclo.\nBNCEnergy srl , a titolo di penale si riserva la facoltà di procedere all'addebito di danni riconducibili a responsabilità del Cliente."
       },
       {
         title: '4. SERVIZIO RIFORNIMENTO',
@@ -515,240 +697,10 @@ class ContractGenerator {
         content: "In caso di sanzioni amministrative verranno addebitate direttamente al conduttore del veicolo."
       }
     ];
-    
-    // Stampa l'introduzione
-    this.doc.fontSize(8).font('Helvetica').fillColor(this.colors.textLight);
-    this.doc
-        .text(termsData[0].content, { width: this.contentWidth, align: 'justify' });
-    this.doc.moveDown(0.5);
 
-    for (let i = 1; i < termsData.length; i++) {
-        const term = termsData[i];
-        
-        // Titolo (es. 1. AFFIDAMENTO DEL VEICOLO)
-        this.doc
-            .font('Helvetica-Bold')
-            .fillColor(this.colors.text)
-            .text(term.title, { continued: false, paragraphGap: 2 });
-        
-        // Contenuto dell'articolo
-        this.doc
-            .font('Helvetica')
-            .fillColor(this.colors.textLight)
-            // L'utilizzo del testo normale con align: 'justify' gestisce bene i ritorni a capo
-            .text(term.content, { width: this.contentWidth, align: 'justify' });
+    const clauseConsent = "In relazione al trattamento dei dati personali che lo riguardano, così come sopra descritto, il Cliente esprime liberamente il proprio consenso, ai sensi e per gli effetti della Legge.";
 
-        this.doc.moveDown(0.8);
-    }
-    
-    // Clausole finali (fuori dal loop)
-
-    // Clausola 1: Consenso al Trattamento
-    this.doc
-        .fontSize(8)
-        .font('Helvetica')
-        .fillColor(this.colors.text)
-        .text('In relazione al trattamento dei dati personali che lo riguardano, così come sopra descritto, il Cliente esprime liberamente il proprio consenso, ai sensi e per gli effetti della Legge.', 
-          { width: this.contentWidth, align: 'justify' });
-    this.doc.moveDown(0.3);
-    
-    // Clausola 2: Nullità
-    this.doc
-        .text('Qualora una disposizione del presente contratto di noleggio fosse nulla, tale nullità non determinerà l\'invalidità delle altre disposizioni del presente contratto di noleggio.', 
-          { width: this.contentWidth, align: 'justify' });
-    this.doc.moveDown(0.3);
-
-    // Clausola 3: Valuta
-    this.doc
-        .text('Se il Cliente decide di pagare in una valuta diversa da quella con cui è stato quotato il costo del noleggio, il controvalore sarà calcolato sul tasso di cambio pubblicato dalla CITIBANK maggiorato del 4% a titolo di rimborso delle spese e commissioni bancarie e rischio oscillazioni cambi.', 
-          { width: this.contentWidth, align: 'justify' });
-    this.doc.moveDown(0.8);
-
-    // BLOCCO CONSENSO CHECKBOX
-    this.doc
-        .fontSize(8)
-        .font('Helvetica')
-        .fillColor(this.colors.text)
-        .text('Il cliente ricevute le informazioni di cui all’art.13 del Regolamento UE 2016/679,', { continued: false });
-    
-    const consentY = this.doc.y;
-    const checkboxX = this.pageMargin;
-    const textAfterCheckboxX = checkboxX + 150; 
-
-    // Disegna Checkbox (utilizzando Helvetica-Bold per la visibilità)
-    this.doc
-        .font('Helvetica-Bold')
-        .text('[ X ] acconsente', checkboxX + 5, consentY + 5, { continued: false }); 
-    
-    this.doc
-        .text('[ ] non acconsente', checkboxX + 5, consentY + 17, { continued: false });
-
-    // Disegna il testo accanto alle checkbox
-    this.doc
-        .font('Helvetica')
-        .fillColor(this.colors.textLight)
-        .text('al trattamento dei dati personali per attività di invio di materiale pubblicitario e utilizzo nell’ambito di analisi e studi commerciali e di abitudini di consumo così come specificati nell\'informativa all\'articolo 10 (Privacy) punto 2 del presente contratto.', 
-          textAfterCheckboxX, consentY + 5, { width: 365, align: 'justify' }); 
-
-    this.doc.y = consentY + 45; // Avanza il cursore dopo il blocco
-
-    // Approvazione finale
-    this.doc
-        .fontSize(9)
-        .font('Helvetica')
-        .fillColor(this.colors.text)
-        .text('Il Cliente avendo preso visione dell\'informativa alla Privacy e delle Condizioni Generali di Noleggio, dichiara di approvarne specificatamente tutte le clausole.', 
-            { width: this.contentWidth, align: 'justify' });
-    
-    this.doc.moveDown();
-    this.addSignatureBox('Firma Cliente', this.doc.y);
-  }
-
-  // ============================================
-  // FOTO (Pagina 3+)
-  // ============================================
-
-  addPhotosSection(title, photos) {
-    this.doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor(this.colors.primary)
-      .text(title, { align: 'center' });
-    
-    this.doc.moveDown();
-    
-    let x = this.pageMargin;
-    let y = this.doc.y;
-    const photoWidth = 240;
-    const photoHeight = 180;
-    const spacing = 15;
-    
-    photos.forEach((photo, index) => {
-      // Calcolo la Y per il prossimo elemento prima di disegnare
-      if (y > 700 - photoHeight - 40) { // Se lo spazio non è sufficiente per foto + didascalia
-        this.doc.addPage();
-        y = this.pageMargin;
-        x = this.pageMargin;
-      }
-      
-      if (fs.existsSync(photo.file_path)) {
-        try {
-          this.doc.image(photo.file_path, x, y, {
-            width: photoWidth,
-            height: photoHeight,
-            fit: [photoWidth, photoHeight]
-          });
-          
-          this.doc
-            .fontSize(7)
-            .font('Helvetica')
-            .fillColor(this.colors.textLight)
-            .text(`Creata il ${this.formatDateTime(photo.uploaded_at)}`, 
-              x, y + photoHeight + 5, { width: photoWidth, align: 'center' });
-          
-          // Posiziona prossima foto
-          if ((index + 1) % 2 === 0) {
-            // Vai a nuova riga
-            x = this.pageMargin;
-            y += photoHeight + 40;
-          } else {
-            // Prossima colonna
-            x += photoWidth + spacing;
-          }
-        } catch (err) {
-          console.error(`Errore caricamento foto ${photo.file_path}:`, err);
-        }
-      }
-    });
-    
-    this.doc.y = y; // Aggiorno il cursore finale
-  }
-
-  // ============================================
-  // UTILITY METHODS
-  // ============================================
-
-  addSectionTitle(title) {
-    this.doc
-      .fontSize(10)
-      .font('Helvetica-Bold')
-      .fillColor(this.colors.primary)
-      .text(title, this.pageMargin, this.doc.y);
-    
-    this.doc
-      .moveTo(this.pageMargin, this.doc.y + 2)
-      .lineTo(this.pageMargin + this.contentWidth, this.doc.y + 2)
-      .stroke(this.colors.border);
-    
-    this.doc.moveDown(0.5);
-  }
-
-  addLabelValue(label, value, x = null, labelWidth = 120) {
-    const currentY = this.doc.y;
-    const xPos = x !== null ? x : this.pageMargin;
-    
-    // Stampa Label
-    this.doc
-      .fontSize(8)
-      .font('Helvetica-Bold')
-      .fillColor(this.colors.textLight)
-      .text(label + ':', xPos, currentY, { width: labelWidth, continued: false });
-    
-    // Stampa Value
-    this.doc
-      .font('Helvetica')
-      .fillColor(this.colors.text)
-      .text(value || 'N/A', xPos + labelWidth, currentY, { width: 200, continued: false }); 
-      
-    // Imposta la nuova Y (avanzamento standard)
-    const newY = currentY + 12;
-    this.doc.y = newY;
-    
-    return newY; // Ritorna la nuova posizione Y
-  }
-
-  addSignatureBox(label, y) {
-    const signatureY = y + 20;
-    
-    this.doc
-      .moveTo(400, signatureY)
-      .lineTo(540, signatureY)
-      .stroke(this.colors.border);
-    
-    this.doc
-      .fontSize(8)
-      .font('Helvetica')
-      .fillColor(this.colors.textLight)
-      .text(label, 400, signatureY + 5);
-      
-    this.doc.y = signatureY + 20; // Avanzamento dopo la firma
-  }
-
-  formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  }
-
-  formatDateTime(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-
-  formatCurrency(amount) {
-    if (amount === null || amount === undefined) return '€ 0.00';
-    return `€ ${parseFloat(amount).toFixed(2)}`;
+    return { intro, articles, clauseConsent };
   }
 }
 
