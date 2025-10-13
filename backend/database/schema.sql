@@ -1,4 +1,5 @@
 -- Database: rental_management
+-- Schema corretto con tutte le correzioni
 
 -- Drop tables if exist (per sviluppo)
 DROP TABLE IF EXISTS rental_photos CASCADE;
@@ -55,7 +56,7 @@ CREATE TABLE vehicles (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabella Clienti
+-- Tabella Clienti (con campi documento identità aggiunti)
 CREATE TABLE customers (
     id SERIAL PRIMARY KEY,
     customer_type VARCHAR(20) DEFAULT 'individual',
@@ -76,12 +77,17 @@ CREATE TABLE customers (
     license_expiry_date DATE NOT NULL,
     birth_date DATE,
     birth_place VARCHAR(100),
+    -- Campi documento identità
+    id_card_number VARCHAR(50),
+    id_card_issue_date DATE,
+    id_card_expiry_date DATE,
+    id_card_issued_by VARCHAR(255),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabella Noleggi (principale)
+-- Tabella Noleggi (principale) - SCHEMA COMPLETO E CORRETTO
 CREATE TABLE rentals (
     id SERIAL PRIMARY KEY,
     rental_number VARCHAR(20) UNIQUE NOT NULL,
@@ -112,19 +118,19 @@ CREATE TABLE rentals (
     return_damages TEXT,
     return_notes TEXT,
     
-    -- Conducente aggiuntivo
-    additional_driver_name VARCHAR(100),
+    -- Conducente aggiuntivo (CAMPI CORRETTI)
+    additional_driver_name VARCHAR(255),
     additional_driver_birth_date DATE,
-    additional_driver_birth_place VARCHAR(100),
-    additional_driver_license VARCHAR(20),
-    additional_driver_license_issued_by VARCHAR(50),
+    additional_driver_birth_place VARCHAR(255),
+    additional_driver_license VARCHAR(50),
+    additional_driver_license_issued_by VARCHAR(255),
     additional_driver_license_issue_date DATE,
     additional_driver_license_expiry DATE,
     
-    -- Tariffe e costi
+    -- Tariffe e costi (TUTTI I CAMPI NECESSARI)
     daily_rate DECIMAL(10,2) NOT NULL,
     total_days INTEGER NOT NULL,
-    km_included VARCHAR(20) DEFAULT 'unlimited',
+    km_included VARCHAR(50) DEFAULT 'Illimitati',
     km_extra_cost DECIMAL(10,2) DEFAULT 0,
     delivery_cost DECIMAL(10,2) DEFAULT 0,
     fuel_charge DECIMAL(10,2) DEFAULT 0,
@@ -145,11 +151,11 @@ CREATE TABLE rentals (
     deposit_amount DECIMAL(10,2) DEFAULT 0,
     deposit_method VARCHAR(50),
     
-    -- Carta di credito garanzia
-    cc_holder_name VARCHAR(100),
-    cc_type VARCHAR(30),
-    cc_number_masked VARCHAR(20),
-    cc_expiry VARCHAR(7),
+    -- Carta di credito garanzia (CAMPI CORRETTI)
+    cc_holder_name VARCHAR(255),
+    cc_type VARCHAR(50),
+    cc_number_masked VARCHAR(50),
+    cc_expiry VARCHAR(10),
     
     -- Franchigie
     franchise_theft DECIMAL(10,2) DEFAULT 0,
@@ -194,13 +200,15 @@ CREATE TABLE rental_payments (
     created_by INTEGER REFERENCES users(id)
 );
 
--- Tabella Foto
+-- Tabella Foto (CON CAMPI CORRETTI - file_size e mime_type aggiunti)
 CREATE TABLE rental_photos (
     id SERIAL PRIMARY KEY,
     rental_id INTEGER REFERENCES rentals(id) ON DELETE CASCADE,
     photo_type VARCHAR(20) NOT NULL,
     file_path VARCHAR(500) NOT NULL,
     file_name VARCHAR(200) NOT NULL,
+    file_size INTEGER,
+    mime_type VARCHAR(100),
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     notes TEXT
 );
@@ -254,4 +262,3 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
 
 CREATE TRIGGER update_rentals_updated_at BEFORE UPDATE ON rentals 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
