@@ -55,7 +55,7 @@ CREATE TABLE vehicles (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabella Clienti
+-- Tabella Clienti (CORRETTO secondo struttura reale)
 CREATE TABLE customers (
     id SERIAL PRIMARY KEY,
     customer_type VARCHAR(20) DEFAULT 'individual',
@@ -65,9 +65,9 @@ CREATE TABLE customers (
     vat_number VARCHAR(11),
     address VARCHAR(200) NOT NULL,
     city VARCHAR(100) NOT NULL,
-    province VARCHAR(2) NOT NULL,
+    province VARCHAR(50),  -- CORRETTO: da VARCHAR(2) a VARCHAR(50)
     zip_code VARCHAR(10) NOT NULL,
-    country VARCHAR(2) DEFAULT 'IT',
+    country VARCHAR(50) DEFAULT 'IT',  -- CORRETTO: da VARCHAR(2) a VARCHAR(50)
     phone VARCHAR(20) NOT NULL,
     email VARCHAR(100) NOT NULL,
     license_number VARCHAR(20) NOT NULL,
@@ -76,12 +76,17 @@ CREATE TABLE customers (
     license_expiry_date DATE NOT NULL,
     birth_date DATE,
     birth_place VARCHAR(100),
+    -- AGGIUNTI campi carta identità
+    id_card_number VARCHAR(255),
+    id_card_issue_date DATE,
+    id_card_expiry_date DATE,
+    id_card_issued_by VARCHAR(255),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabella Noleggi (principale)
+-- Tabella Noleggi (principale) - CORRETTA con campi aggiuntivi
 CREATE TABLE rentals (
     id SERIAL PRIMARY KEY,
     rental_number VARCHAR(20) UNIQUE NOT NULL,
@@ -91,12 +96,14 @@ CREATE TABLE rentals (
     customer_id INTEGER REFERENCES customers(id) NOT NULL,
     vehicle_id INTEGER REFERENCES vehicles(id) NOT NULL,
     created_by INTEGER REFERENCES users(id),
+    closed_by INTEGER REFERENCES users(id),  -- AGGIUNTO
     
     -- Date e orari
     rental_date TIMESTAMP NOT NULL,
     pickup_date TIMESTAMP NOT NULL,
     expected_return_date TIMESTAMP NOT NULL,
     actual_return_date TIMESTAMP,
+    return_date TIMESTAMP WITH TIME ZONE,  -- AGGIUNTO
     
     -- Informazioni pickup
     pickup_location VARCHAR(200) NOT NULL,
@@ -137,6 +144,7 @@ CREATE TABLE rentals (
     -- Totali
     subtotal DECIMAL(10,2) NOT NULL,
     total_amount DECIMAL(10,2) NOT NULL,
+    final_total DECIMAL(10,2),  -- AGGIUNTO
     amount_paid DECIMAL(10,2) DEFAULT 0,
     amount_due DECIMAL(10,2) DEFAULT 0,
     
@@ -194,13 +202,15 @@ CREATE TABLE rental_payments (
     created_by INTEGER REFERENCES users(id)
 );
 
--- Tabella Foto
+-- Tabella Foto (CORRETTA con campi aggiuntivi)
 CREATE TABLE rental_photos (
     id SERIAL PRIMARY KEY,
     rental_id INTEGER REFERENCES rentals(id) ON DELETE CASCADE,
     photo_type VARCHAR(20) NOT NULL,
     file_path VARCHAR(500) NOT NULL,
     file_name VARCHAR(200) NOT NULL,
+    file_size INTEGER,  -- AGGIUNTO
+    mime_type VARCHAR(100),  -- AGGIUNTO
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     notes TEXT
 );
@@ -254,4 +264,3 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
 
 CREATE TRIGGER update_rentals_updated_at BEFORE UPDATE ON rentals 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
