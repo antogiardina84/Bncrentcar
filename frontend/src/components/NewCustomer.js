@@ -8,34 +8,39 @@ const NewCustomer = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
-  // Campi allineati con la tabella 'customers' del DB
+  // Campi allineati con la tabella 'customers' del DB (schema.sql)
   const [formData, setFormData] = useState({
-    // Dati Base e Anagrafici (NON NULL nel DB)
+    // Dati Base e Anagrafici (NOT NULL nel DB)
     customer_type: 'individuale', // Default
     full_name: '',
     fiscal_code: '',
     email: '',
     phone: '',
-    birth_date: '', // NUOVO: NOT NULL
-    birth_place: '', // NUOVO: NOT NULL
+    birth_date: '', 
+    birth_place: '', 
 
-    // Indirizzo (NON NULL nel DB)
+    // Indirizzo (NOT NULL nel DB)
     address: '',
     city: '',
-    province: '', // NUOVO: NOT NULL
+    province: '', 
     zip_code: '',
-    country: 'Italia', // NUOVO (opzionale, default Italia)
+    country: 'IT', // Allineato al default del DB 'IT'
 
     // Dati Aziendali (Opzionali)
     company_name: '',
     vat_number: '',
 
-    // Documenti (NOT NULL nel DB - Patente, Opzionale - CI)
-    driving_license_number: '', // Mappa a license_number (NOT NULL)
-    license_issued_by: '', // NUOVO: NOT NULL
-    license_issue_date: '', // NUOVO: NOT NULL (Tipo Date)
-    license_expiry_date: '', // NUOVO: NOT NULL (Tipo Date)
-    id_card_number: '', // Mappa a id_card_number (Opzionale, aggiunto con ALTER TABLE)
+    // Patente (TUTTI i campi sono NOT NULL nel DB - schema.sql)
+    license_number: '', // CORRETTO: Mappa a license_number
+    license_issued_by: '', 
+    license_issue_date: '', 
+    license_expiry_date: '', 
+
+    // Documento Identità (Opzionale, aggiunto con ALTER TABLE/Migration)
+    id_card_number: '', 
+    id_card_issue_date: '', // Aggiunto per allineamento completo
+    id_card_expiry_date: '', // Aggiunto per allineamento completo
+    id_card_issued_by: '', // Aggiunto per allineamento completo
 
     // Note
     notes: '',
@@ -51,15 +56,31 @@ const NewCustomer = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validazione di base lato client: Controlla solo i campi essenziali
-    if (!formData.full_name || !formData.fiscal_code || !formData.email || !formData.phone) {
-      toast.error('Per favore, compila tutti i campi obbligatori.');
+    // Validazione completa lato client: Deve includere TUTTI i campi NON NULL del DB/Validazione server (customers.js)
+    if (
+      !formData.full_name || 
+      !formData.fiscal_code || 
+      !formData.email || 
+      !formData.phone ||
+      !formData.address || 
+      !formData.city || 
+      !formData.province || 
+      !formData.zip_code || 
+      !formData.license_number ||          // license_number è NOT NULL
+      !formData.license_issued_by ||       // license_issued_by è NOT NULL
+      !formData.license_issue_date ||      // license_issue_date è NOT NULL
+      !formData.license_expiry_date        // license_expiry_date è NOT NULL
+    ) {
+      toast.error('Per favore, compila tutti i campi obbligatori: Dati Anagrafici, Residenza e Dati Completi della Patente.');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await customersAPI.create(formData);
+      // Non è necessario il destructuring o il rename perché lo stato è stato aggiornato
+      // per usare direttamente 'license_number'
+      const response = await customersAPI.create(formData); 
+      
       toast.success('Cliente registrato con successo!');
       navigate(`/customers/${response.data.data.id}`);
     } catch (error) {
@@ -166,26 +187,26 @@ const NewCustomer = () => {
                   
                   {/* Indirizzo */}
                   <div className="col-md-6 form-group">
-                    <label className="form-label">Indirizzo</label>
-                    <input type="text" name="address" className="form-control" value={formData.address} onChange={handleChange} />
+                    <label className="form-label">Indirizzo <span className="text-danger">*</span></label>
+                    <input type="text" name="address" className="form-control" value={formData.address} onChange={handleChange} required />
                   </div>
                   
                   {/* Città */}
                   <div className="col-md-3 form-group">
-                    <label className="form-label">Città</label>
-                    <input type="text" name="city" className="form-control" value={formData.city} onChange={handleChange} />
+                    <label className="form-label">Città <span className="text-danger">*</span></label>
+                    <input type="text" name="city" className="form-control" value={formData.city} onChange={handleChange} required />
                   </div>
 
                   {/* Provincia */}
                   <div className="col-md-3 form-group">
-                    <label className="form-label">Provincia</label>
-                    <input type="text" name="province" className="form-control" value={formData.province} onChange={handleChange} />
+                    <label className="form-label">Provincia <span className="text-danger">*</span></label>
+                    <input type="text" name="province" className="form-control" value={formData.province} onChange={handleChange} required />
                   </div>
 
                   {/* CAP */}
                   <div className="col-md-3 form-group">
-                    <label className="form-label">CAP</label>
-                    <input type="text" name="zip_code" className="form-control" value={formData.zip_code} onChange={handleChange} />
+                    <label className="form-label">CAP <span className="text-danger">*</span></label>
+                    <input type="text" name="zip_code" className="form-control" value={formData.zip_code} onChange={handleChange} required />
                   </div>
 
                   {/* Paese */}
@@ -202,39 +223,66 @@ const NewCustomer = () => {
                   
                   {/* Patente di Guida N. */}
                   <div className="col-md-6 form-group">
-                    <label className="form-label">Patente di Guida N.</label>
-                    <input type="text" name="driving_license_number" className="form-control" value={formData.driving_license_number} onChange={handleChange} />
+                    <label className="form-label">Patente di Guida N. <span className="text-danger">*</span></label>
+                    <input 
+                      type="text" 
+                      name="license_number" // CORRETTO: allineato allo stato e al DB
+                      className="form-control" 
+                      value={formData.license_number} 
+                      onChange={handleChange} 
+                      required 
+                    />
                   </div>
                   
                   {/* Rilasciata da */}
                   <div className="col-md-6 form-group">
-                    <label className="form-label">Patente Rilasciata da (Ufficio/Stato)</label>
-                    <input type="text" name="license_issued_by" className="form-control" value={formData.license_issued_by} onChange={handleChange} />
+                    <label className="form-label">Patente Rilasciata da (Ufficio/Stato) <span className="text-danger">*</span></label>
+                    <input type="text" name="license_issued_by" className="form-control" value={formData.license_issued_by} onChange={handleChange} required />
                   </div>
                   
                   {/* Data Emissione Patente */}
                   <div className="col-md-6 form-group">
-                    <label className="form-label">Data Emissione Patente</label>
-                    <input type="date" name="license_issue_date" className="form-control" value={formData.license_issue_date} onChange={handleChange} />
+                    <label className="form-label">Data Emissione Patente <span className="text-danger">*</span></label>
+                    <input type="date" name="license_issue_date" className="form-control" value={formData.license_issue_date} onChange={handleChange} required />
                   </div>
                   
                   {/* Data Scadenza Patente */}
                   <div className="col-md-6 form-group">
-                    <label className="form-label">Data Scadenza Patente</label>
-                    <input type="date" name="license_expiry_date" className="form-control" value={formData.license_expiry_date} onChange={handleChange} />
+                    <label className="form-label">Data Scadenza Patente <span className="text-danger">*</span></label>
+                    <input type="date" name="license_expiry_date" className="form-control" value={formData.license_expiry_date} onChange={handleChange} required />
                   </div>
+                  
+                  <div className='col-12'><hr /></div>
 
                   {/* Carta d'Identità N. */}
                   <div className="col-md-6 form-group">
                     <label className="form-label">Carta d'Identità N.</label>
                     <input type="text" name="id_card_number" className="form-control" value={formData.id_card_number} onChange={handleChange} />
                   </div>
+                  
+                  {/* Carta d'Identità Rilasciata da */}
+                  <div className="col-md-6 form-group">
+                    <label className="form-label">Carta d'Identità Rilasciata da</label>
+                    <input type="text" name="id_card_issued_by" className="form-control" value={formData.id_card_issued_by} onChange={handleChange} />
+                  </div>
+                  
+                  {/* Carta d'Identità Data Emissione */}
+                  <div className="col-md-6 form-group">
+                    <label className="form-label">Data Emissione Carta d'Identità</label>
+                    <input type="date" name="id_card_issue_date" className="form-control" value={formData.id_card_issue_date} onChange={handleChange} />
+                  </div>
+                  
+                  {/* Carta d'Identità Data Scadenza */}
+                  <div className="col-md-6 form-group">
+                    <label className="form-label">Data Scadenza Carta d'Identità</label>
+                    <input type="date" name="id_card_expiry_date" className="form-control" value={formData.id_card_expiry_date} onChange={handleChange} />
+                  </div>
 
 
                   {/* ==================================== */}
                   {/* SEZIONE 4: NOTE E SUBMIT */}
                   {/* ==================================== */}
-                  <div className="col-12 form-group">
+                  <div className="col-12 form-group mt-3">
                     <label className="form-label">Note</label>
                     <textarea name="notes" className="form-control" value={formData.notes} onChange={handleChange} rows="3" />
                   </div>
