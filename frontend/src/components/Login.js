@@ -1,3 +1,4 @@
+// Login.js
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +46,7 @@ const Login = () => {
     <div style={{
       minHeight: '100vh',
       display: 'flex',
+      flexDirection: 'column', // Aggiunto per posizionare il footer
       alignItems: 'center',
       justifyContent: 'center',
       background: 'linear-gradient(135deg, #1a4d2e 0%, #143d24 100%)',
@@ -57,6 +59,7 @@ const Login = () => {
         width: '100%',
         maxWidth: '400px',
         overflow: 'hidden',
+        marginBottom: '15px', // Spazio tra form e footer
       }}>
         {/* Header */}
         <div style={{
@@ -141,15 +144,22 @@ const Login = () => {
             fontSize: '13px',
             color: '#6c757d',
           }}>
-            <strong>Account demo:</strong><br />
-            Username: <code>admin</code><br />
-            Password: <code>admin123</code>
+            
           </div>
         </form>
       </div>
+
+      {/* Nuovo Footer qui per la pagina di Login */}
+      <footer style={{
+        textAlign: 'center',
+        fontSize: '12px',
+        color: 'rgba(255, 255, 255, 0.7)',
+      }}>
+        Sviluppato da **Antonino Giardina** - all rights reserved 2025®
+      </footer>
+
     </div>
   );
 };
 
 export default Login;
-

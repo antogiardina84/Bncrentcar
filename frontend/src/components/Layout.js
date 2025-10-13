@@ -1,3 +1,4 @@
+// Layout.js
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -111,6 +112,18 @@ const Layout = ({ children }) => {
       {/* Main Content: UTILIZZA content-wrapper per il CSS di scorrimento */}
       <main className="content-wrapper">
         {children}
+        {/* Nuovo Footer qui */}
+        <footer style={{ 
+          padding: '10px 20px', 
+          textAlign: 'center', 
+          fontSize: '12px', 
+          color: '#999',
+          marginTop: 'auto', // Spinge il footer in fondo al content-wrapper
+          borderTop: '1px solid #eee',
+          background: '#fff',
+        }}>
+          Sviluppato da **Antonino Giardina** - all rights reserved 2025®
+        </footer>
       </main>
     </div>
   );
