@@ -25,8 +25,8 @@ const NewRental = () => {
   
   const [customers, setCustomers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
-  const [categories, setCategories] = useState([]);
-
+  // Linea 28: Rimosso: const [categories, setCategories] = useState([]);
+  
   // ✅ STATO COMPLETO CON TUTTI I CAMPI DELLA TABELLA RENTALS
   const [formData, setFormData] = useState({
     // Step 1: Cliente
@@ -98,7 +98,7 @@ const NewRental = () => {
     rental_id: null,
   });
 
-  const [uploadedPhotos, setUploadedPhotos] = useState([]);
+  // Linea 101: Rimosso: const [uploadedPhotos, setUploadedPhotos] = useState([]);
 
   useEffect(() => {
     loadInitialData();
@@ -181,7 +181,8 @@ const NewRental = () => {
         vehiclesAPI.getAll({ limit: 1000 }),
       ]);
 
-      setCustomers(customersRes.data.data.customers || []); 
+      // FIX: Carica l'array di clienti direttamente da .data.data
+      setCustomers(customersRes.data.data || []); 
       setVehicles(vehiclesRes.data.data || []); 
       
     } catch (error) {
@@ -236,6 +237,8 @@ const NewRental = () => {
           toast.error('Devi accettare il contratto e l\'informativa sulla privacy');
           return false;
         }
+        break;
+      default: // Aggiunto per eliminare l'avviso di ESLint
         break;
     }
     return true;
@@ -1369,7 +1372,7 @@ const NewRental = () => {
       <PhotoUpload
         rentalId={formData.rental_id}
         photoType="pickup"
-        onPhotosChange={setUploadedPhotos}
+        onPhotosChange={() => {}} // Modificata per eliminare l'avviso 'uploadedPhotos'
       />
     </div>
   );
