@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query, pool } = require('../config/database'); 
 const { authMiddleware } = require('../middleware/auth');
-const ContractGenerator = require('../utils/contractGenerator');
+const ContractGenerator = require('../utils/contractGenerator'); // Assumendo che questo esista
 const path = require('path');
 const fs = require('fs');
 
@@ -33,175 +33,77 @@ function generateBookingCode() {
 // =========================================================================
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { 
-      status, 
-      customer_name, 
-      license_plate, 
-      date_from, 
-      date_to,
-      page = 1,
-      limit = 50 
-    } = req.query;
+    const { status, customer_name, license_plate, page = 1, limit = 50 } = req.query;
 
     let queryText = `
       SELECT 
         r.*,
-        c.full_name AS customer_name,
-        c.phone AS customer_phone,
+        c.full_name as customer_name,
         v.license_plate,
         v.brand,
-        v.model,
-        vc.name AS category_name
+        v.model
       FROM rentals r
-      LEFT JOIN customers c ON r.customer_id = c.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
-      LEFT JOIN vehicle_categories vc ON v.category_id = vc.id
+      JOIN customers c ON r.customer_id = c.id
+      JOIN vehicles v ON r.vehicle_id = v.id
       WHERE 1=1
     `;
-    
-    let countQueryText = `
-      SELECT COUNT(r.id) AS total_count
-      FROM rentals r
-      LEFT JOIN customers c ON r.customer_id = c.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
-      WHERE 1=1
-    `;
-
     const params = [];
     let paramCount = 1;
 
     if (status) {
-      const filterClause = ` AND r.status = $${paramCount}`;
-      queryText += filterClause;
-      countQueryText += filterClause;
+      queryText += ` AND r.status = $${paramCount}`;
       params.push(status);
       paramCount++;
     }
 
     if (customer_name) {
-      const filterClause = ` AND c.full_name ILIKE $${paramCount}`;
-      queryText += filterClause;
-      countQueryText += filterClause;
+      queryText += ` AND c.full_name ILIKE $${paramCount}`;
       params.push(`%${customer_name}%`);
       paramCount++;
     }
 
     if (license_plate) {
-      const filterClause = ` AND v.license_plate ILIKE $${paramCount}`;
-      queryText += filterClause;
-      countQueryText += filterClause;
+      queryText += ` AND v.license_plate ILIKE $${paramCount}`;
       params.push(`%${license_plate}%`);
       paramCount++;
     }
     
-    if (date_from) {
-      const filterClause = ` AND r.pickup_date >= $${paramCount}`;
-      queryText += filterClause;
-      countQueryText += filterClause;
-      params.push(date_from);
-      paramCount++;
-    }
-    
-    if (date_to) {
-      const filterClause = ` AND r.expected_return_date <= $${paramCount}`;
-      queryText += filterClause;
-      countQueryText += filterClause;
-      params.push(date_to);
-      paramCount++;
-    }
-
-    const countResult = await query(countQueryText, params); 
-    const totalCount = parseInt(countResult.rows[0].total_count);
-
-    const limitNum = parseInt(limit);
-    const offset = (parseInt(page) - 1) * limitNum;
-    
+    // Paginazione
     queryText += ` ORDER BY r.pickup_date DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    params.push(limitNum, offset);
+    params.push(limit, (page - 1) * limit);
+
+    const result = await query(queryText, params);
+
+    // Conteggio totale (senza limit e offset)
+    const countQuery = `
+      SELECT COUNT(r.id)
+      FROM rentals r
+      JOIN customers c ON r.customer_id = c.id
+      JOIN vehicles v ON r.vehicle_id = v.id
+      WHERE 1=1
+      ${status ? ` AND r.status = $${paramCount}` : ''}
+      ${customer_name ? ` AND c.full_name ILIKE $${paramCount}` : ''}
+      ${license_plate ? ` AND v.license_plate ILIKE $${paramCount}` : ''}
+    `;
     
-    const result = await query(queryText, params); 
+    // I parametri per il conteggio devono essere solo i filtri
+    const countParams = params.slice(0, paramCount - 2); 
+    const totalCountResult = await query(countQuery, countParams);
+    const totalRentals = parseInt(totalCountResult.rows[0].count);
+
 
     res.json({
       success: true,
       data: {
         rentals: result.rows,
-        total_count: totalCount,
+        total: totalRentals,
         page: parseInt(page),
-        limit: limitNum,
+        limit: parseInt(limit)
       }
     });
 
   } catch (error) {
     console.error('Errore recupero noleggi:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Errore interno del server durante il recupero dei noleggi', 
-      error: error.message 
-    });
-  }
-});
-
-// =========================================================================
-// GET /api/rentals/:id - Dettaglio noleggio
-// =========================================================================
-router.get('/:id', authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const queryText = `
-      SELECT 
-        r.*,
-        c.full_name AS customer_name,
-        c.phone AS customer_phone,
-        c.email AS customer_email,
-        c.address,
-        c.city,
-        c.fiscal_code,
-        c.vat_number,
-        c.license_number,
-        c.license_issued_by,
-        c.license_issue_date,
-        c.license_expiry_date,
-        v.license_plate,
-        v.brand,
-        v.model,
-        vc.name AS category_name,
-        vc.daily_rate
-      FROM rentals r
-      LEFT JOIN customers c ON r.customer_id = c.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
-      LEFT JOIN vehicle_categories vc ON v.category_id = vc.id
-      WHERE r.id = $1
-    `;
-
-    const result = await query(queryText, [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Noleggio non trovato' 
-      });
-    }
-
-    const rental = result.rows[0];
-
-    const photosQuery = `
-      SELECT id, photo_type, file_name, upload_date
-      FROM rental_photos
-      WHERE rental_id = $1
-      ORDER BY upload_date DESC
-    `;
-    
-    const photosResult = await query(photosQuery, [id]);
-    rental.photos = photosResult.rows;
-
-    res.json({
-      success: true,
-      data: rental
-    });
-
-  } catch (error) {
-    console.error('Errore recupero dettaglio noleggio:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Errore interno del server', 
@@ -217,27 +119,49 @@ router.post('/', authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const { 
+      customer_id, 
+      vehicle_id, 
+      pickup_date, 
+      expected_return_date,
+      pickup_location,
+      pickup_fuel_level,
+      pickup_km,
+      pickup_damages,
+      pickup_notes,
 
-    const {
-      customer_id, vehicle_id,
-      pickup_date, expected_return_date,
-      pickup_location, pickup_fuel_level, pickup_km, pickup_damages, pickup_notes,
-      daily_rate, deposit_amount = 0, total_days = 1,
-      subtotal, total_amount,
+      // Tariffe e costi
+      daily_rate,
+      deposit_amount,
+      total_days,
+      km_included,
+      delivery_cost, 
+      fuel_charge, 
+      after_hours_charge, 
+      km_extra_cost, // Nuovo campo unitario
+      extras_charge, 
+
+      // Totali
+      extra_km_charge, 
+      franchise_charge, 
+      discount, 
+      subtotal,
+      total_amount,
+
+      // Coperture
+      franchise_theft,
+      franchise_damage,
+      franchise_rca,
+
+      // Pagamento
+      payment_method, 
+      deposit_method,
+      cc_holder_name,
+      cc_type,
+      cc_number_masked,
+      cc_expiry,
       
-      // 🆕 NUOVI CAMPI FINANZIARI
-      delivery_cost = 0,
-      fuel_charge = 0,
-      after_hours_charge = 0,
-      extras_charge = 0,
-      extra_km_charge = 0,
-      franchise_charge = 0,
-      discount = 0,
-      payment_method = 'Contanti',
-      deposit_method = 'Contanti',
-      km_included = 'Illimitati',
-      
-      // 🆕 CONDUCENTE AGGIUNTIVO
+      // Conducente aggiuntivo
       additional_driver_name,
       additional_driver_birth_place,
       additional_driver_birth_date,
@@ -246,189 +170,162 @@ router.post('/', authMiddleware, async (req, res) => {
       additional_driver_license_issue_date,
       additional_driver_license_expiry,
       
-      // 🆕 CARTA DI CREDITO
-      cc_holder_name,
-      cc_type,
-      cc_number_masked,
-      cc_expiry,
+      // Consensi e Firma
+      contract_signed = false,
+      privacy_consent = false,
+      marketing_consent = false,
+      customer_signature, // ✅ NUOVO CAMPO: Firma (Base64)
       
       status = 'active',
       is_completed = false,
     } = req.body;
     
-    // Validazione date
-    if (!pickup_date || !expected_return_date || new Date(pickup_date) >= new Date(expected_return_date)) {
+    // Validazione base
+    if (!customer_id || !vehicle_id || !pickup_date || !expected_return_date) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Date non valide' });
-    }
-    
-    // Validazione campi NOT NULL
-    if (!subtotal || !total_amount) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Campi finanziari obbligatori mancanti' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Campi obbligatori mancanti: cliente, veicolo e date' 
+      });
     }
 
     const rental_number = generateRentalNumber();
     const booking_code = generateBookingCode();
     
+    // Preparazione query con 46 campi/valori
     const insertRentalQuery = `
       INSERT INTO rentals (
-        rental_number, booking_code, customer_id, vehicle_id, created_by,
-        rental_date, pickup_date, expected_return_date, pickup_location, 
-        pickup_fuel_level, pickup_km, pickup_damages, pickup_notes, 
-        daily_rate, deposit_amount, total_days, subtotal, total_amount,
-        delivery_cost, fuel_charge, after_hours_charge, extras_charge,
-        extra_km_charge, franchise_charge, discount,
-        payment_method, deposit_method, km_included,
-        additional_driver_name, additional_driver_birth_place, additional_driver_birth_date,
-        additional_driver_license, additional_driver_license_issued_by,
-        additional_driver_license_issue_date, additional_driver_license_expiry,
-        cc_holder_name, cc_type, cc_number_masked, cc_expiry,
-        status, is_completed
-      ) VALUES (
-        $1, $2, $3, $4, $5, 
-        NOW(), $6, $7, $8, 
-        $9, $10, $11, $12, 
-        $13, $14, $15, $16, $17,
-        $18, $19, $20, $21,
-        $22, $23, $24,
-        $25, $26, $27,
-        $28, $29, $30,
-        $31, $32,
-        $33, $34,
-        $35, $36, $37, $38,
-        $39, $40
+        rental_number, 
+        booking_code, 
+        customer_id, 
+        vehicle_id,
+        pickup_date,
+        expected_return_date,
+        pickup_location,
+        pickup_fuel_level,
+        pickup_km,
+        pickup_damages,
+        pickup_notes,
+        daily_rate,
+        deposit_amount,
+        total_days,
+        km_included,
+        delivery_cost, 
+        fuel_charge, 
+        after_hours_charge, 
+        km_extra_cost,         -- $19: Nuovo campo unitario
+        extras_charge, 
+        extra_km_charge, 
+        franchise_charge, 
+        discount, 
+        subtotal,
+        total_amount,
+        payment_method, 
+        deposit_method, 
+        cc_holder_name,
+        cc_type,
+        cc_number_masked,
+        cc_expiry,
+        franchise_theft,
+        franchise_damage,
+        franchise_rca,
+        additional_driver_name,
+        additional_driver_birth_place,
+        additional_driver_birth_date,
+        additional_driver_license,
+        additional_driver_license_issued_by,
+        additional_driver_license_issue_date,
+        additional_driver_license_expiry,
+        contract_signed,
+        privacy_consent,
+        marketing_consent,
+        customer_signature,  -- ✅ NUOVO CAMPO $44
+        status,
+        is_completed
       )
-      RETURNING id, rental_number
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+        $41, $42, $43, $44, $45, $46, $47
+      )
+      RETURNING *
     `;
-
-    const rentalResult = await client.query(insertRentalQuery, [
-      rental_number, booking_code, customer_id, vehicle_id, req.user.id,
-      pickup_date, expected_return_date, pickup_location,
-      pickup_fuel_level, pickup_km, pickup_damages, pickup_notes,
-      daily_rate, deposit_amount, total_days, subtotal, total_amount,
-      delivery_cost, fuel_charge, after_hours_charge, extras_charge,
-      extra_km_charge, franchise_charge, discount,
-      payment_method, deposit_method, km_included,
-      additional_driver_name, additional_driver_birth_place, additional_driver_birth_date,
-      additional_driver_license, additional_driver_license_issued_by,
-      additional_driver_license_issue_date, additional_driver_license_expiry,
-      cc_holder_name, cc_type, cc_number_masked, cc_expiry,
-      status, is_completed
-    ]);
-
-    const { id: newRentalId, rental_number: newRentalNumber } = rentalResult.rows[0];
     
-    // Aggiorna stato veicolo
+    // Array di valori corrispondente alla query
+    const rentalValues = [
+      rental_number, 
+      booking_code,
+      customer_id, 
+      vehicle_id, 
+      pickup_date,
+      expected_return_date,
+      pickup_location,
+      pickup_fuel_level,
+      pickup_km,
+      pickup_damages,
+      pickup_notes,
+      daily_rate,
+      deposit_amount,
+      total_days,
+      km_included,
+      delivery_cost, 
+      fuel_charge, 
+      after_hours_charge, 
+      km_extra_cost,        // Nuovo valore
+      extras_charge, 
+      extra_km_charge, 
+      franchise_charge, 
+      discount, 
+      subtotal,
+      total_amount,
+      payment_method, 
+      deposit_method, 
+      cc_holder_name,
+      cc_type,
+      cc_number_masked,
+      cc_expiry,
+      franchise_theft,
+      franchise_damage,
+      franchise_rca,
+      additional_driver_name,
+      additional_driver_birth_place,
+      additional_driver_birth_date,
+      additional_driver_license,
+      additional_driver_license_issued_by,
+      additional_driver_license_issue_date,
+      additional_driver_license_expiry,
+      contract_signed,
+      privacy_consent,
+      marketing_consent,
+      customer_signature,   // ✅ NUOVO VALORE $44
+      status,
+      is_completed
+    ];
+
+    const result = await client.query(insertRentalQuery, rentalValues);
+    const newRental = result.rows[0];
+
+    // Aggiornamento dello stato del veicolo
     await client.query(
-      "UPDATE vehicles SET status = 'rented', updated_at = NOW() WHERE id = $1",
-      [vehicle_id]
+      'UPDATE vehicles SET status = $1, last_rental_id = $2 WHERE id = $3',
+      ['rented', newRental.id, vehicle_id]
     );
 
     await client.query('COMMIT');
-
-    res.status(201).json({
-      success: true,
-      message: 'Noleggio creato con successo',
-      data: { id: newRentalId, rental_number: newRentalNumber }
+    res.status(201).json({ 
+      success: true, 
+      message: 'Noleggio creato con successo', 
+      data: newRental 
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Errore creazione noleggio:', error);
-    res.status(500).json({ success: false, message: 'Errore interno', error: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-// =========================================================================
-// POST /api/rentals/:id/close - Chiusura noleggio (Transazione)
-// =========================================================================
-router.post('/:id/close', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const { 
-    return_date, 
-    return_location, 
-    return_fuel_level, 
-    return_km, 
-    return_damages,
-    final_total,
-    amount_paid,
-    amount_due,
-  } = req.body; 
-
-  const rentalId = parseInt(id);
-  const returnKm = parseInt(return_km);
-  const returnFuelLevel = parseFloat(return_fuel_level);
-  const finalTotal = parseFloat(final_total || 0);
-  const amountPaid = parseFloat(amount_paid || 0);
-  const amountDue = parseFloat(amount_due || 0);
-  const closedBy = req.user.id; 
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const updateRentalQuery = `
-      UPDATE rentals 
-      SET 
-        status = 'closed',
-        return_date = $1,
-        return_location = $2,
-        return_fuel_level = $3,
-        return_km = $4,
-        return_damages = $5,
-        final_total = $6,
-        amount_paid = $7,
-        amount_due = $8,
-        closed_by = $9,
-        updated_at = NOW()
-      WHERE id = $10 AND status != 'closed'
-      RETURNING vehicle_id;
-    `;
-    
-    const rentalResult = await client.query(updateRentalQuery, [
-      return_date,
-      return_location,
-      returnFuelLevel,
-      returnKm,
-      return_damages,
-      finalTotal,
-      amountPaid,
-      amountDue,
-      closedBy,
-      rentalId
-    ]);
-
-    if (rentalResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, message: 'Noleggio non trovato o già chiuso.' });
-    }
-
-    const { vehicle_id } = rentalResult.rows[0];
-
-    const updateVehicleQuery = `
-      UPDATE vehicles 
-      SET 
-        status = 'available', 
-        current_km = $1, 
-        updated_at = NOW()
-      WHERE id = $2;
-    `;
-    await client.query(updateVehicleQuery, [returnKm, vehicle_id]);
-
-    await client.query('COMMIT');
-
-    res.json({ success: true, message: 'Noleggio chiuso con successo!', data: { id: rentalId } });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Errore durante la chiusura del noleggio:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Errore interno del server durante la chiusura.',
+      message: 'Errore interno del server durante la creazione del noleggio', 
       error: error.message 
     });
   } finally {
@@ -437,28 +334,27 @@ router.post('/:id/close', authMiddleware, async (req, res) => {
 });
 
 // =========================================================================
-// POST /api/rentals/:id/generate-contract - Genera Contratto PDF
+// GET /api/rentals/:id - Dettaglio noleggio
 // =========================================================================
-router.post('/:id/generate-contract', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const queryText = `
       SELECT 
         r.*,
-        c.full_name, c.fiscal_code, c.address, c.city, c.zip_code, c.phone, c.email, c.vat_number,
-        c.license_number, c.license_issued_by, c.license_issue_date, c.license_expiry_date,
-        c.province, c.country, c.birth_date, c.birth_place,
-        v.license_plate, v.brand, v.model, v.year, v.color, v.fuel_type, v.transmission, v.seats,
-        vc.name AS category_name,
-        u.full_name AS operator_name
+        c.full_name as customer_name,
+        c.tax_code as customer_tax_code,
+        c.phone as customer_phone,
+        v.license_plate,
+        v.brand,
+        v.model
       FROM rentals r
-      LEFT JOIN customers c ON r.customer_id = c.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
-      LEFT JOIN vehicle_categories vc ON v.category_id = vc.id
-      LEFT JOIN users u ON r.created_by = u.id
+      JOIN customers c ON r.customer_id = c.id
+      JOIN vehicles v ON r.vehicle_id = v.id
       WHERE r.id = $1
     `;
+
     const result = await query(queryText, [id]);
 
     if (result.rows.length === 0) {
@@ -468,72 +364,13 @@ router.post('/:id/generate-contract', authMiddleware, async (req, res) => {
       });
     }
 
-    const rawRentalData = result.rows[0];
-    
-    const photosQuery = `
-      SELECT id, photo_type, file_path, file_name, upload_date
-      FROM rental_photos
-      WHERE rental_id = $1
-      ORDER BY upload_date ASC
-    `;
-    const photosResult = await query(photosQuery, [id]);
-    
-    const pickup_photos = photosResult.rows.filter(p => p.photo_type === 'pickup');
-    const return_photos = photosResult.rows.filter(p => p.photo_type === 'return');
-    
-    const rentalData = {
-      ...rawRentalData,
-      customer: {
-        full_name: rawRentalData.full_name,
-        address: rawRentalData.address,
-        city: rawRentalData.city,
-        zip_code: rawRentalData.zip_code,
-        province: rawRentalData.province || '',
-        country: rawRentalData.country || 'ITALIA', 
-        fiscal_code: rawRentalData.fiscal_code,
-        vat_number: rawRentalData.vat_number,
-        phone: rawRentalData.phone,
-        email: rawRentalData.email,
-        license_number: rawRentalData.license_number,
-        license_issued_by: rawRentalData.license_issued_by,
-        license_issue_date: rawRentalData.license_issue_date,
-        license_expiry_date: rawRentalData.license_expiry_date,
-        birth_date: rawRentalData.birth_date,
-        birth_place: rawRentalData.birth_place,
-      },
-      vehicle: {
-        license_plate: rawRentalData.license_plate,
-        brand: rawRentalData.brand,
-        model: rawRentalData.model,
-        year: rawRentalData.year,
-        color: rawRentalData.color,
-        fuel_type: rawRentalData.fuel_type,
-        transmission: rawRentalData.transmission,
-        seats: rawRentalData.seats,
-      },
-      pickup_photos: pickup_photos,
-      return_photos: return_photos,
-    };
-    
-    const generator = new ContractGenerator(); 
-    const filename = `CONTRATTO-${rentalData.rental_number}.pdf`;
-    
-    const contractsDir = path.join(__dirname, '../contracts');
-    if (!fs.existsSync(contractsDir)) {
-      fs.mkdirSync(contractsDir, { recursive: true });
-    }
-    const filepath = path.join(contractsDir, filename);
-    
-    await generator.generateContract(rentalData, filepath); 
-
     res.json({
       success: true,
-      message: 'Contratto generato con successo',
-      filename: filename
+      data: result.rows[0]
     });
 
   } catch (error) {
-    console.error('Errore generazione contratto:', error);
+    console.error('Errore recupero dettaglio noleggio:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Errore interno del server', 
@@ -542,17 +379,126 @@ router.post('/:id/generate-contract', authMiddleware, async (req, res) => {
   }
 });
 
+
 // =========================================================================
-// GET /api/rentals/:id/download-contract - Download Contratto PDF
+// PUT /api/rentals/:id/close - Chiusura noleggio (Transazione)
 // =========================================================================
-router.get('/:id/download-contract', authMiddleware, async (req, res) => {
+router.put('/:id/close', authMiddleware, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const {
+      return_date,
+      return_location,
+      return_fuel_level,
+      return_km,
+      return_damages,
+      final_total,
+      amount_paid,
+      amount_due,
+    } = req.body;
+
+    // 1. Aggiorna i dati del noleggio e lo stato
+    const updateRentalQuery = `
+      UPDATE rentals 
+      SET 
+        return_date = $1,
+        return_location = $2,
+        return_fuel_level = $3,
+        return_km = $4,
+        return_damages = $5,
+        final_total = $6,
+        amount_paid = $7,
+        amount_due = $8,
+        status = 'completed',
+        is_completed = TRUE,
+        updated_at = NOW()
+      WHERE id = $9
+      RETURNING *
+    `;
+    
+    const rentalResult = await client.query(updateRentalQuery, [
+      return_date,
+      return_location,
+      return_fuel_level,
+      return_km,
+      final_total,
+      amount_paid,
+      amount_due,
+      return_damages,
+      id
+    ]);
+
+    if (rentalResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Noleggio non trovato' 
+      });
+    }
+
+    const rental = rentalResult.rows[0];
+
+    // 2. Aggiorna lo stato e i Km del veicolo
+    await client.query(
+      'UPDATE vehicles SET status = $1, current_km = $2 WHERE id = $3',
+      ['available', return_km, rental.vehicle_id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ 
+      success: true, 
+      message: 'Noleggio chiuso e veicolo reso disponibile',
+      data: rental
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Errore chiusura noleggio:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Errore interno del server durante la chiusura', 
+      error: error.message 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+
+// =========================================================================
+// GET /api/rentals/:id/contract - Generazione e Download Contratto
+// =========================================================================
+router.get('/:id/contract', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await query(
-      'SELECT rental_number FROM rentals WHERE id = $1',
-      [id]
-    );
+    // Recupera i dati completi del noleggio (join con customer e vehicle)
+    const result = await query(`
+      SELECT 
+        r.*,
+        c.full_name as customer_name,
+        c.tax_code as customer_tax_code,
+        c.address as customer_address,
+        c.city as customer_city,
+        c.phone as customer_phone,
+        v.license_plate,
+        v.brand,
+        v.model,
+        v.category_name,
+        v.chassis_number,
+        v.daily_rate as category_daily_rate -- solo per riferimento
+      FROM rentals r
+      JOIN customers c ON r.customer_id = c.id
+      JOIN (
+        SELECT v.*, vc.name as category_name
+        FROM vehicles v
+        JOIN vehicle_categories vc ON v.category_id = vc.id
+      ) v ON r.vehicle_id = v.id
+      WHERE r.id = $1
+    `, [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ 
@@ -561,16 +507,23 @@ router.get('/:id/download-contract', authMiddleware, async (req, res) => {
       });
     }
 
-    const filename = `CONTRATTO-${result.rows[0].rental_number}.pdf`;
-    const filepath = path.join(__dirname, '../contracts', filename);
-
+    const rentalData = result.rows[0];
+    
+    // Inizializza il generatore di contratti
+    const generator = new ContractGenerator(rentalData);
+    
+    // Genera il PDF e ottieni il percorso
+    const { filepath, filename } = await generator.generatePdf();
+    
+    // Verifica se il file esiste prima di inviarlo
     if (!fs.existsSync(filepath)) {
-      return res.status(404).json({ 
+      return res.status(500).json({ 
         success: false, 
         message: 'Contratto non trovato. Generarlo prima.' 
       });
     }
 
+    // Invia il file come download
     res.download(filepath, filename);
 
   } catch (error) {
@@ -618,10 +571,11 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     console.error('Errore eliminazione noleggio:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Errore interno del server', 
+      message: 'Errore interno del server',
       error: error.message 
     });
   }
 });
+
 
 module.exports = router;
